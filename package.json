@@ -1,0 +1,9 @@
+{
+  "name": "frontier-chat",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "dependencies": {
+    "marked": "18.2.1"
+  }
+}

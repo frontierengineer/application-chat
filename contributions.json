@@ -1,0 +1,105 @@
+{
+  "id": "github.com/frontierengineer/chat",
+  "title": "Chat",
+  "color": "#6c5ce7",
+  "description": "Talk with agents. Start a chat on any runtime and worker, in a workspace or without one, and follow every turn as it runs.",
+  "dependencies": [
+    { "id": "github.com/frontierengineer/claude-code", "reason": "Claude Code is a runtime to chat with." },
+    { "id": "github.com/frontierengineer/opencode", "reason": "OpenCode is a runtime to chat with." },
+    { "id": "github.com/frontierengineer/git-worktrees", "reason": "A chat can work in its own git worktree of a repository." },
+    { "id": "github.com/frontierengineer/directory-workspaces", "reason": "A chat can work in a directory of its own." }
+  ],
+  "sessions": { "visibility": "public" },
+  "surface": {
+    "desktop": {
+      "title": "Chat",
+      "description": "Your chats with agents, each beside the list of the others.",
+      "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }]
+    },
+    "panel": {
+      "title": "Chat",
+      "description": "Your chats with agents, one at a time.",
+      "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
+      "minWidth": 380
+    },
+    "actions": [
+      {
+        "id": "new-chat",
+        "title": "New chat",
+        "description": "Opens Chat on a new chat, where a person writes the first prompt and chooses the runtime, worker, model and workspace."
+      },
+      {
+        "id": "start-chat",
+        "title": "Start a chat",
+        "description": "Starts a chat with an agent on the given runtime and worker, sends it the prompt, and opens it in Chat.",
+        "input": [
+          { "type": "select", "key": "runtime", "label": "Runtime", "required": true, "choices": { "entity": "runtime" } },
+          { "type": "select", "key": "worker", "label": "Worker", "required": true, "choices": { "entity": "worker" } },
+          { "type": "text", "key": "prompt", "label": "Prompt", "required": true },
+          { "type": "text", "key": "title", "label": "Title", "description": "Named from the prompt when left empty." }
+        ]
+      },
+      {
+        "id": "open-chat",
+        "title": "Open chat",
+        "description": "Opens a chat in Chat.",
+        "input": [
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
+        ]
+      },
+      {
+        "id": "prompt-chat",
+        "title": "Send to a chat",
+        "description": "Sends a prompt to a chat's agent, resuming the chat first if it was released. The prompt waits its turn while the agent is busy.",
+        "input": [
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." },
+          { "type": "text", "key": "prompt", "label": "Prompt", "required": true }
+        ]
+      },
+      {
+        "id": "release-chat",
+        "title": "Release chat",
+        "description": "Stops a chat's agent and frees its workspace slot. The conversation is kept, and the next prompt resumes it.",
+        "input": [
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
+        ]
+      }
+    ],
+    "optionSources": [{ "id": "chats", "title": "Chats" }],
+    "keybindings": [{ "chord": "alt+n", "actionId": "new-chat" }]
+  },
+  "host": {
+    "methods": [
+      {
+        "id": "create-chat",
+        "title": "Create chat",
+        "description": "Starts a chat: a public session on a runtime and worker, optionally in a workspace, recorded in Chat. Input: runtimeId and workerId (strings, required); title (string); model ({ modelId, settings }); agentDefinitionId and personaId (strings); workspace, either { workspaceId } for an existing workspace on that worker or { workspaceProvisionerId, name?, base? } to mount one, which Chat unmounts when the chat is released; prompt (a string or prompt content parts) to send at once. Answers { chatId, sessionId, turn: { turnId, queued } or null }."
+      },
+      {
+        "id": "prompt-chat",
+        "title": "Prompt chat",
+        "description": "Sends a prompt to a chat's agent. A released chat, or one whose session ended, is resumed first on a fresh session that continues the same conversation. A prompt sent while a turn runs is queued, the latest replacing any earlier queued one. Input: chatId (string), prompt (a string or prompt content parts). Answers { sessionId, turnId, queued }."
+      },
+      {
+        "id": "resume-chat",
+        "title": "Resume chat",
+        "description": "Starts a released chat again on a fresh session that continues its conversation, mounting its workspace if needed. Does nothing to a chat that is running. Input: chatId (string). Answers { sessionId }."
+      },
+      {
+        "id": "release-chat",
+        "title": "Release chat",
+        "description": "Stops a chat's agent, ends its session and frees its workspace slot, keeping the conversation so the chat can resume. Input: chatId (string). Answers { released }, false when it was not running."
+      },
+      {
+        "id": "remove-chat",
+        "title": "Remove chat",
+        "description": "Releases a chat and removes it from Chat. Its workspace and the agent's own record of the conversation stay. Input: chatId (string). Answers { removed: true }."
+      },
+      {
+        "id": "list-chats",
+        "title": "List chats",
+        "description": "Every chat in Chat, most recently prompted first, each with its id, title, runtimeId, workerId, workspace, model, sessionId (null when released), agentSessionId, createdAt, lastPromptAt and releasedAt. Input: none. Answers { chats }."
+      }
+    ]
+  }
+}
