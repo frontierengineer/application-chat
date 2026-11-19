@@ -391,8 +391,7 @@ export class Conversation {
     } else {
       this.usageSlot.replaceChildren();
     }
-    const width = this.host.width() === 'fill' ? 'width-column' : 'width-fill';
-    const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', width, this.handle.remove ? 'remove' : ''].filter(Boolean);
+    const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', this.host.width() === 'fill' ? 'full-width-on' : 'full-width', this.handle.remove ? 'remove' : ''].filter(Boolean);
     // The menu is drawn again only when its items change, so a redraw never closes it under the person's pointer.
     if (values.join(' ') !== this.menuItems || this.menu === null) {
       this.menuItems = values.join(' ');
@@ -408,7 +407,9 @@ export class Conversation {
     const item = (value: string, label: string, tone?: string) => h('li', {}, h('button', { type: 'button', 'data-value': value, 'data-tone': tone }, label));
     for (const value of values) {
       if (value === 'remove') items.push(h('li', {}, h('hr')), item('remove', t('conversation.remove'), 'danger'));
-      else if (value.startsWith('width-')) items.push(h('li', {}, h('hr')), item(value, t(`conversation.${value.replace('-', '_')}`)));
+      else if (value.startsWith('full-width')) {
+        items.push(h('li', {}, h('hr')), h('li', {}, h('button', { type: 'button', role: 'menuitemcheckbox', 'aria-checked': value === 'full-width-on' ? 'true' : 'false', 'data-value': 'full-width' }, t('conversation.full_width'))));
+      }
       else items.push(item(value, t(`conversation.${value}`)));
     }
     if (items[0]?.firstElementChild?.localName === 'hr') items.shift();
@@ -423,18 +424,19 @@ export class Conversation {
         else if (value === 'release') void this.release();
         else if (value === 'resume') void this.resume();
         else if (value === 'remove') void this.remove();
-        else if (value === 'width-fill' || value === 'width-column') this.setWidth(value === 'width-fill' ? 'fill' : 'column');
+        else if (value === 'full-width') this.setWidth(this.host.width() === 'fill' ? 'column' : 'fill');
       });
       return menu;
     }
     return null;
   }
 
-  // The runtime, and the model and mode where the agent lets them change, sit in the composer's bar.
+  // The runtime, and the model and mode where the agent lets them change, sit in the composer's bar, each choice a
+  // menu of radio items behind a button that shows what is chosen.
   private drawChoices(): void {
     const t = this.host.t;
     const session = this.handle.session();
-    // Drawn again only when what it shows changes, so an open select is never replaced under the person.
+    // Drawn again only when what it shows changes, so an open menu is never replaced under the person.
     const signature = JSON.stringify([this.host.runtimeTitle(this.handle.runtimeId), session?.id ?? null, session?.model() ?? null, session?.modes() ?? null, this.handle.models()]);
     if (signature === this.choicesSignature) return;
     this.choicesSignature = signature;
@@ -443,49 +445,65 @@ export class Conversation {
       const groups = this.handle.models();
       if (groups.length > 0) {
         const current = session.model();
-        const select = h('select', { 'aria-label': t('conversation.model'), 'data-size': 'small', 'data-variant': 'ghost' },
-          h('option', { value: '', selected: current === null }, t('conversation.default_model')),
-          ...groups.map((group) => h('optgroup', { label: group.label },
-            ...group.versions.map((version) => h('option', { value: version.id, selected: current?.modelId === version.id }, version.label)))));
-        select.addEventListener('change', async () => {
-          if (select.value === '') return;
-          const answer = await session.setModel({ modelId: select.value });
+        const versions = groups.flatMap((group) => group.versions);
+        const options = [
+          ...(current === null ? [{ value: '', label: t('conversation.default_model') }] : []),
+          ...versions.map((version) => ({ value: version.id, label: version.label })),
+        ];
+        choices.push(this.picker(t('conversation.model'), options, current?.modelId ?? '', async (modelId) => {
+          const answer = await session.setModel({ modelId });
           this.reportAction(answer, t('conversation.model_unavailable'));
-        });
-        choices.push(select);
-        const version = groups.flatMap((group) => group.versions).find((entry) => entry.id === current?.modelId);
-        for (const setting of version?.settings ?? []) choices.push(this.settingControl(session, setting, current?.settings ?? {}));
+        }));
+        const version = versions.find((entry) => entry.id === current?.modelId);
+        for (const setting of version?.settings ?? []) {
+          const control = this.settingControl(session, setting, current?.settings ?? {});
+          if (control) choices.push(control);
+        }
       } else {
         const model = session.model();
         if (model) choices.push(ds('frontier-badge', {}, model.modelId));
       }
       const modes = session.modes();
       if (modes.available.length > 0) {
-        const select = h('select', { 'aria-label': t('conversation.mode'), 'data-size': 'small', 'data-variant': 'ghost' },
-          ...modes.available.map((mode) => h('option', { value: mode.id, selected: mode.id === modes.current, title: mode.description ?? undefined }, mode.name)));
-        select.addEventListener('change', async () => {
-          const answer = await session.setMode(select.value);
-          this.reportAction(answer);
-        });
-        choices.push(select);
+        const options = modes.available.map((mode) => ({ value: mode.id, label: mode.name, description: mode.description }));
+        choices.push(this.picker(t('conversation.mode'), options, modes.current ?? '', async (modeId) => this.reportAction(await session.setMode(modeId))));
       }
     }
     this.choices.replaceChildren(...choices);
   }
 
-  private settingControl(session: Session, field: Field, values: Record<string, string | number | boolean>): HTMLElement {
-    const label = field.label;
-    if (field.type !== 'select' || !Array.isArray(field.choices)) return h('span', {});
-    const current = values[field.key] ?? field.default ?? '';
-    const select = h('select', { 'aria-label': label, 'data-size': 'small', 'data-variant': 'ghost' },
-      ...(field.choices as readonly { value: string; label?: string }[]).map((choice) => h('option', { value: choice.value, selected: choice.value === current }, choice.label ?? choice.value)));
-    select.addEventListener('change', async () => {
+  // A ghost button naming the choice, opening the Design System's menu of the choices as radio items. Its text is
+  // in a span, so the Design System does not take it for an icon button, whose only element child is its icon.
+  private picker(label: string, options: { value: string; label: string; description?: string | null }[], current: string, choose: (value: string) => void): HTMLElement {
+    const chosen = options.find((option) => option.value === current)?.label ?? current;
+    const menu = ds('frontier-menu', { class: 'picker' },
+      h('button', { type: 'button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': this.host.t('composer.picker', { label, value: chosen }), title: label }, h('span', {}, chosen), icon('down')),
+      h('menu', {}, ...options.map((option) => h('li', {}, h('button', {
+        type: 'button',
+        role: 'menuitemradio',
+        'aria-checked': option.value === current ? 'true' : 'false',
+        'data-value': option.value,
+        title: option.description ?? undefined,
+      }, option.label)))),
+    );
+    menu.addEventListener('frontier-select', (event) => {
+      const value = (event as CustomEvent<{ value: string }>).detail?.value;
+      if (typeof value === 'string' && value !== current) choose(value);
+    });
+    return menu;
+  }
+
+  private settingControl(session: Session, field: Field, values: Record<string, string | number | boolean>): HTMLElement | null {
+    if (field.type !== 'select' || !Array.isArray(field.choices)) return null;
+    const options = (field.choices as readonly { value: string; label?: string }[]).map((choice) => ({ value: choice.value, label: choice.label ?? choice.value }));
+    // A setting the session holds no value for runs at its default, or else at its first choice.
+    const current = String(values[field.key] ?? field.default ?? options[0]?.value ?? '');
+    return this.picker(field.label, options, current, async (value) => {
       const model = session.model();
       if (!model) return;
-      const answer = await session.setModel({ modelId: model.modelId, settings: { ...model.settings, [field.key]: select.value } });
+      const answer = await session.setModel({ modelId: model.modelId, settings: { ...model.settings, [field.key]: value } });
       this.reportAction(answer, this.host.t('conversation.model_unavailable'));
     });
-    return select;
   }
 
   private setWidth(width: Width): void {

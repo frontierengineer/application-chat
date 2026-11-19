@@ -31,6 +31,7 @@ type Locator = {
   fill(value: string): Promise<void>;
   press(key: string): Promise<void>;
   textContent(): Promise<string | null>;
+  getAttribute(name: string): Promise<string | null>;
   allTextContents(): Promise<string[]>;
   isVisible(): Promise<boolean>;
   isDisabled(): Promise<boolean>;
@@ -129,11 +130,19 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByText('Canceled. What the agent did so far is kept.').first().waitFor();
 
-  await page.getByLabel('Mode', { exact: true }).selectOption('plan');
+  await page.getByRole('button', { name: 'Mode: Default' }).click();
+  assert.equal(await page.getByRole('menuitemradio', { name: 'Default' }).getAttribute('aria-checked'), 'true', 'the mode in use is checked');
+  await page.getByRole('menuitemradio', { name: 'Plan' }).click();
   await page.getByText('Switched to plan mode').waitFor();
-  await page.getByLabel('Model', { exact: true }).selectOption('opus');
+  await page.getByRole('button', { name: 'Mode: Plan' }).waitFor();
+  await page.getByRole('button', { name: "Model: Agent's default" }).click();
+  await page.getByRole('menuitemradio', { name: 'Opus 5.5' }).click();
   await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.modelId ?? null")) === 'opus', 'the model change');
-  await page.getByLabel('Effort', { exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Model: Opus 5.5' }).waitFor();
+  await page.getByRole('button', { name: /^Effort: / }).click();
+  await page.getByRole('menuitemradio', { name: 'High' }).click();
+  await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.settings?.effort ?? null")) === 'high', 'the setting change');
+  await page.getByRole('button', { name: 'Effort: High' }).waitFor();
 
   await page.locator('input[type="file"]').setInputFiles([{ name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from([137, 80, 78, 71]) }]);
   await page.getByText('screen.png', { exact: false }).waitFor();
@@ -250,13 +259,18 @@ test('with no runtime installed, the new chat form says so and points to install
   await page.close();
 });
 
-test('a model setting shows its label, never the runtime\'s own description of it', {}, async () => {
+test('a model setting\'s description is behind a question mark beside its label, not a caption under it', {}, async () => {
   const page = await open('desktop');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByText('Options').click();
   await page.getByLabel('Model', { exact: true }).selectOption('opus');
   await page.getByLabel('Effort', { exact: true }).waitFor();
-  assert.equal(await page.getByText('reasoning effort', { exact: false }).count(), 0);
+  assert.equal(await page.getByText('How hard the model thinks', { exact: false }).isVisible(), false, 'no caption shows');
+  const about = page.getByRole('button', { name: 'About Effort' });
+  assert.equal(await about.getAttribute('title'), 'How hard the model thinks before it answers.', 'it shows on hover');
+  await about.click();
+  await page.getByText('How hard the model thinks', { exact: false }).waitFor({ state: 'visible' });
+  await shot(page, 'desktop-setting-about');
   await page.close();
 });
 
@@ -273,7 +287,8 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   assert.ok((await widths()).transcript <= 860, 'a reading column at first');
   await shot(page, 'desktop-width-column');
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('menuitem', { name: 'Fill the width' }).click();
+  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Full width' }).getAttribute('aria-checked'), 'false');
+  await page.getByRole('menuitemcheckbox', { name: 'Full width' }).click();
   await eventually(async () => (await widths()).transcript > 1000 && (await widths()).composer > 1000, 'the transcript and composer to fill the width');
   assert.equal(await page.evaluate<string>("JSON.stringify(window.surfacePreferences.get('width'))"), '"fill"');
   await shot(page, 'desktop-width-fill');
@@ -282,7 +297,8 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   await page.getByText('The build bundles each Interface on its own.').waitFor();
   assert.ok((await widths()).transcript > 1000, 'the choice is remembered');
   await page.getByRole('button', { name: 'More' }).click();
-  await page.getByRole('menuitem', { name: 'Reading width' }).click();
+  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Full width' }).getAttribute('aria-checked'), 'true');
+  await page.getByRole('menuitemcheckbox', { name: 'Full width' }).click();
   await eventually(async () => (await widths()).transcript <= 860, 'the reading column again');
   await page.close();
 });

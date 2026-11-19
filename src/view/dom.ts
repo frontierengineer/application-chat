@@ -55,6 +55,7 @@ export const paths = {
   fetch: 'M12 3v12m-5-5 5 5 5-5M5 21h14',
   switch_mode: 'M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5',
   other: 'M12 8v8M8 12h8',
+  help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.3M12 17h.01',
 } as const;
 
 export function icon(name: keyof typeof paths): SVGSVGElement {

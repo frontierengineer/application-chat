@@ -13,7 +13,7 @@ install.agent = (session, turnId) => {
   session.emit({ type: 'thinking', id: `${turnId}-think`, delta: 'Reading the test file first.', partial: true, text: null, timestamp: install.now() });
 };
 const models: AvailableModel[] = [
-  { label: 'Claude Opus', versions: [{ id: 'opus', label: 'Opus 5.5', contextWindow: 200000, settings: [{ type: 'select', key: 'effort', label: 'Effort', description: "The model's reasoning effort, as Claude Code names it.", choices: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] }] }] },
+  { label: 'Claude Opus', versions: [{ id: 'opus', label: 'Opus 5.5', contextWindow: 200000, settings: [{ type: 'select', key: 'effort', label: 'Effort', description: 'How hard the model thinks before it answers.', choices: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] }] }] },
   { label: 'Claude Sonnet', versions: [{ id: 'sonnet', label: 'Sonnet 5.5', contextWindow: 200000, settings: [] }] },
 ];
 install.workers.push({ id: 'w1', title: 'Laptop', connected: true }, { id: 'w2', title: 'Build server', connected: true });

@@ -51,14 +51,21 @@ function settingInput(field: Field, value: string | number | boolean | undefined
 
 let fieldCounter = 0;
 
-function field(label: string, control: HTMLElement, help?: string | null): HTMLElement {
+// A field's label, its control, and a hint after it. What a setting is for is behind a question mark beside its
+// label: its words show on hover and, pressed, in a popover beside it, and a screen reader hears them with the field.
+function field(label: string, control: HTMLElement, help?: string | null, about?: { text: string; label: string } | null): HTMLElement {
   fieldCounter += 1;
   const id = control.id || `field-${fieldCounter}`;
   control.id = id;
   const helpElement = help ? h('small', { id: `${id}-help` }, help) : null;
-  if (helpElement) control.setAttribute('aria-describedby', helpElement.id);
+  const aboutElement = about ? h('div', { id: `${id}-about`, class: 'about', popover: 'auto', style: `position-anchor: --${id}-about` }, about.text) : null;
+  const described = [helpElement?.id, aboutElement?.id].filter(Boolean).join(' ');
+  if (described) control.setAttribute('aria-describedby', described);
   else control.removeAttribute('aria-describedby');
-  return h('div', { class: 'field' }, h('label', { for: id }, label), control, helpElement);
+  const aboutButton = about && aboutElement
+    ? h('button', { type: 'button', class: 'about-button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': about.label, title: about.text, popovertarget: aboutElement.id, style: `anchor-name: --${id}-about` }, icon('help'))
+    : null;
+  return h('div', { class: 'field' }, h('div', { class: 'field-label' }, h('label', { for: id }, label), aboutButton, aboutElement), control, helpElement);
 }
 
 export class NewChatForm {
@@ -258,8 +265,7 @@ export class NewChatForm {
         const target = input as HTMLInputElement | HTMLSelectElement;
         this.settings[setting.key] = target instanceof HTMLInputElement && target.type === 'checkbox' ? target.checked : target instanceof HTMLInputElement && target.type === 'number' ? Number(target.value) : target.value;
       });
-      // A Runtime's own words about its setting are not shown: the label names it.
-      return field(setting.label, input);
+      return field(setting.label, input, null, setting.description ? { text: setting.description, label: this.host.t('new.about_setting', { setting: setting.label }) } : null);
     });
     this.definition.replaceChildren(
       h('option', { value: '' }, t('new.default_definition')),

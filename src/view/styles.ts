@@ -106,7 +106,8 @@ details.thinking .body { white-space: pre-wrap; color: var(--frontier-color-text
 .composer .chips:empty { display: none; }
 .composer .chips { display: flex; flex-wrap: wrap; gap: var(--frontier-space-2); }
 .composer .status { color: var(--frontier-color-text-muted); font-size: var(--frontier-font-size-small); display: inline-flex; gap: var(--frontier-space-2); align-items: center; min-inline-size: 0; }
-.composer select { inline-size: auto; max-inline-size: 14rem; }
+.composer .picker { flex: none; }
+.composer .picker > button { max-inline-size: 14rem; }
 /* A chat keeps a reading column unless the person chose to fill the view's width. */
 .main[data-width="fill"] :is(.transcript, .composer, .below-composer) { max-inline-size: none; }
 .composer.dragging { box-shadow: 0 0 0 2px var(--frontier-color-primary); }
@@ -122,7 +123,9 @@ details.thinking .body { white-space: pre-wrap; color: var(--frontier-color-text
 .new-chat .lead { margin: 0; color: var(--frontier-color-text-muted); }
 .new-chat textarea { inline-size: 100%; min-block-size: 7em; box-sizing: border-box; }
 .new-chat .field { display: grid; gap: var(--frontier-space-1); }
-.new-chat .field > label { font-weight: 600; font-size: var(--frontier-font-size-small); }
+.new-chat .field-label { display: flex; align-items: center; gap: var(--frontier-space-1); }
+.new-chat .field-label > label { font-weight: 600; font-size: var(--frontier-font-size-small); }
+.new-chat .about { position-area: block-end span-inline-end; margin: var(--frontier-space-1) 0; inset: auto; max-inline-size: 20rem; }
 .new-chat .field small { color: var(--frontier-color-text-muted); }
 .new-chat .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--frontier-space-3); }
 .new-chat details.options { background: var(--frontier-color-surface-sunken); border-radius: var(--frontier-radius-large); padding: var(--frontier-space-3) var(--frontier-space-4); }
