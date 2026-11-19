@@ -344,7 +344,7 @@ export class NewChatForm {
       return;
     }
     const prompt = this.prompt.value;
-    const input: CreateChatInput = { runtimeId: this.runtimeId, workerId: this.workerId, prompt };
+    const input: CreateChatInput = { runtimeId: this.runtimeId, workerId: this.workerId, prompt, wait: false };
     if (this.title.value.trim() !== '') input.title = this.title.value.trim();
     if (this.modelId !== '') input.model = { modelId: this.modelId, settings: this.settings };
     if (this.definition.value !== '') input.agentDefinitionId = this.definition.value;

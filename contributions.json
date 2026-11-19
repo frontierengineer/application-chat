@@ -73,17 +73,17 @@
       {
         "id": "create-chat",
         "title": "Create chat",
-        "description": "Starts a chat: a public session on a runtime and worker, optionally in a workspace, recorded in Chat. Input: runtimeId and workerId (strings, required); title (string); model ({ modelId, settings }); agentDefinitionId and personaId (strings); workspace, either { workspaceId } for an existing workspace on that worker or { workspaceProvisionerId, name?, base? } to mount one, which Chat unmounts when the chat is released; prompt (a string or prompt content parts) to send at once. Answers { chatId, sessionId, turn: { turnId, queued } or null }."
+        "description": "Starts a chat: a public session on a runtime and worker, optionally in a workspace, recorded in Chat. Input: runtimeId and workerId (strings, required); title (string); model ({ modelId, settings }); agentDefinitionId and personaId (strings); workspace, either { workspaceId } for an existing workspace on that worker or { workspaceProvisionerId, name?, base? } to mount one, which Chat unmounts when the chat is released; prompt (a string or prompt content parts) to send at once; wait (boolean, default true): false answers as soon as the chat is recorded, with sessionId null, and starts its agent in the background, the chat's record saying it is starting and, if it does not start, why. Answers { chatId, sessionId, turn: { turnId, queued } or null }."
       },
       {
         "id": "prompt-chat",
         "title": "Prompt chat",
-        "description": "Sends a prompt to a chat's agent. A released chat, or one whose session ended, is resumed first on a fresh session that continues the same conversation. A prompt sent while a turn runs is queued, the latest replacing any earlier queued one. Input: chatId (string), prompt (a string or prompt content parts). Answers { sessionId, turnId, queued }."
+        "description": "Sends a prompt to a chat's agent. A released chat, or one whose session ended, is resumed first on a fresh session that continues the same conversation. A prompt sent while a turn runs is queued, the latest replacing any earlier queued one. Input: chatId (string), prompt (a string or prompt content parts), wait (boolean, default true): false answers at once when the chat must start again, with sessionId and turnId null, and sends the prompt once its agent runs. Answers { sessionId, turnId, queued }."
       },
       {
         "id": "resume-chat",
         "title": "Resume chat",
-        "description": "Starts a released chat again on a fresh session that continues its conversation, mounting its workspace if needed. Does nothing to a chat that is running. Input: chatId (string). Answers { sessionId }."
+        "description": "Starts a released chat again on a fresh session that continues its conversation, mounting its workspace if needed. Does nothing to a chat that is running. Input: chatId (string), wait (boolean, default true): false answers at once, with sessionId null, and starts it in the background. Answers { sessionId }."
       },
       {
         "id": "release-chat",

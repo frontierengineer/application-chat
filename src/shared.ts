@@ -22,6 +22,10 @@ export interface ChatRecord {
   createdAt: number;
   lastPromptAt: number | null;
   releasedAt: number | null;
+  // While the agent starts in the background, since when and the prompt it is to be sent; null once it runs or failed.
+  starting?: { since: number; prompt: ChatPrompt | null } | null;
+  // Why the agent last failed to start, in the runtime's or Frontier's words; null when it started.
+  startFailure?: string | null;
 }
 
 export type ChatPrompt = string | readonly PromptContentPart[];
@@ -39,11 +43,14 @@ export interface CreateChatInput {
   personaId?: string;
   workspace?: WorkspaceChoice;
   prompt?: ChatPrompt;
+  // false answers once the chat is recorded and starts its agent in the background.
+  wait?: boolean;
 }
 
 export type CreateChatOutput = {
   chatId: string;
-  sessionId: string;
+  // null when the agent is still starting (wait: false).
+  sessionId: string | null;
   turn: { turnId: string; queued: boolean } | null;
 };
 
@@ -53,8 +60,9 @@ export interface PromptChatInput {
 }
 
 export type PromptChatOutput = {
-  sessionId: string;
-  turnId: string;
+  // null, with turnId, when the chat's agent is starting again in the background (wait: false).
+  sessionId: string | null;
+  turnId: string | null;
   queued: boolean;
 };
 

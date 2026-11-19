@@ -140,15 +140,6 @@ async function startSession(context: MethodCallContext, chat: ChatRecord, revisi
   return failure(t(context, 'error.busy_chat'), true);
 }
 
-async function liveSession(context: MethodCallContext, chatId: unknown): Promise<Answer<{ chat: ChatRecord; session: Session }>> {
-  const loaded = await loadChat(context, chatId);
-  if ('ok' in loaded) return loaded;
-  const live = await sessionOf(context, loaded.chat);
-  if (live && !live.ok) return live;
-  if (live && live.ok) return { chat: loaded.chat, session: live.value };
-  return startSession(context, loaded.chat, loaded.revision);
-}
-
 async function send(context: MethodCallContext, chat: ChatRecord, session: Session, prompt: ChatPrompt): Promise<Answer<PromptChatOutput>> {
   const receipt = await session.prompt({ prompt });
   if (!receipt.ok) return receipt;
@@ -156,8 +147,19 @@ async function send(context: MethodCallContext, chat: ChatRecord, session: Sessi
     ...current,
     lastPromptAt: Date.now(),
     agentSessionId: agentSessionOf(session, current.agentSessionId),
+    starting: null,
+    startFailure: null,
   }));
   return { sessionId: session.id, turnId: receipt.value.turnId, queued: receipt.value.queued };
+}
+
+// A start that has run for ten minutes is taken as lost, as when the Host restarted under it, and may be made again.
+function stillStarting(chat: ChatRecord): boolean {
+  return Boolean(chat.starting) && Date.now() - (chat.starting?.since ?? 0) < 600_000;
+}
+
+function wantsWait(input: Record<string, unknown>): boolean {
+  return input.wait !== false;
 }
 
 export async function createChat(context: MethodCallContext, input: Record<string, unknown>): Promise<Answer<CreateChatOutput>> {
@@ -182,6 +184,7 @@ export async function createChat(context: MethodCallContext, input: Record<strin
   if (!runtime.ok) return runtime.unavailable ? runtime : failure(t(context, 'error.no_such_runtime', { runtimeId }), false, 'runtimeId');
 
   let chatWorkspace: ChatRecord['workspace'] = null;
+  let provisioned: { workspaceProvisionerId: string; name?: string; base?: string; title: string } | null = null;
   if (workspace && 'workspaceId' in workspace) {
     const found = await context.workspaces.get(workspace.workspaceId);
     if (!found.ok) return found.unavailable ? found : failure(t(context, 'error.no_such_workspace'), false, 'workspace');
@@ -191,31 +194,9 @@ export async function createChat(context: MethodCallContext, input: Record<strin
     const provisioner = await context.workspaces.workspaceProvisioners.get(workspace.workspaceProvisionerId);
     if (!provisioner.ok) return provisioner.unavailable ? provisioner : failure(t(context, 'error.no_such_provisioner'), false, 'workspace');
     if (provisioner.value.workerId !== workerId) return failure(t(context, 'error.provisioner_elsewhere', { provisioner: provisioner.value.title }), false, 'workspace');
-    const mounted = await context.workspaces.mount({
-      workspaceProvisionerId: workspace.workspaceProvisionerId,
-      ...(workspace.name ? { name: workspace.name } : {}),
-      ...(workspace.base ? { base: workspace.base } : {}),
-    });
-    if (!mounted.ok) return mounted;
-    const details = await context.workspaces.get(mounted.value.workspaceId);
-    chatWorkspace = {
-      workspaceId: mounted.value.workspaceId,
-      title: details.ok ? details.value.name : workspace.name ?? provisioner.value.title,
-      mountedByChat: true,
-    };
+    provisioned = { ...workspace, title: workspace.name ?? provisioner.value.title };
   }
 
-  const options: SessionCreateOptions = { runtimeId, workerId };
-  if (chatWorkspace) options.workspaceId = chatWorkspace.workspaceId;
-  if (agentDefinitionId) options.agentDefinitionId = agentDefinitionId;
-  if (personaId) options.personaId = personaId;
-  if (model) options.model = model;
-  const created = await context.sessions.create(options);
-  if (!created.ok) {
-    if (chatWorkspace?.mountedByChat) await context.workspaces.unmount(chatWorkspace.workspaceId);
-    return created;
-  }
-  const session = created.value;
   const chat: ChatRecord = {
     id: newId(),
     title: title ?? titleFrom(prompt, t(context, 'chat.untitled', { runtime: runtime.value.title })),
@@ -225,36 +206,144 @@ export async function createChat(context: MethodCallContext, input: Record<strin
     model: model ?? null,
     agentDefinitionId: agentDefinitionId ?? null,
     personaId: personaId ?? null,
-    sessionId: session.id,
-    agentSessionId: session.agentSessionId(),
+    sessionId: null,
+    agentSessionId: null,
     createdAt: Date.now(),
     lastPromptAt: null,
     releasedAt: null,
+    starting: { since: Date.now(), prompt: prompt ?? null },
+    startFailure: null,
   };
   const saved = await save(context, chat, null);
-  if (!saved.ok) {
-    await context.sessions.release(session.id);
-    if (chatWorkspace?.mountedByChat) await context.workspaces.unmount(chatWorkspace.workspaceId);
-    return saved;
+  if (!saved.ok) return saved;
+  const started = firstStart(context, chat, provisioned, prompt);
+  if (!wantsWait(input)) {
+    void started;
+    return { chatId: chat.id, sessionId: null, turn: null };
   }
-  if (prompt === undefined) return { chatId: chat.id, sessionId: session.id, turn: null };
-  const sent = await send(context, chat, session, prompt);
-  if ('ok' in sent) return sent;
-  return { chatId: chat.id, sessionId: session.id, turn: { turnId: sent.turnId, queued: sent.queued } };
+  const outcome = await started;
+  if ('ok' in outcome) {
+    // A caller that waited hears the failure itself, so nothing is left behind for it.
+    await context.store.delete(chatKey(chat.id));
+    return outcome;
+  }
+  return { chatId: chat.id, ...outcome };
+}
+
+// Mounts the chat's new workspace, starts its session and sends its first prompt, keeping each step on the record,
+// so a view that did not wait follows it there; a step that fails is kept on the record as the start's failure.
+async function firstStart(
+  context: MethodCallContext,
+  chat: ChatRecord,
+  provisioned: { workspaceProvisionerId: string; name?: string; base?: string; title: string } | null,
+  prompt: ChatPrompt | undefined,
+): Promise<Answer<{ sessionId: string; turn: { turnId: string; queued: boolean } | null }>> {
+  let workspace = chat.workspace;
+  if (provisioned) {
+    const mounted = await context.workspaces.mount({
+      workspaceProvisionerId: provisioned.workspaceProvisionerId,
+      ...(provisioned.name ? { name: provisioned.name } : {}),
+      ...(provisioned.base ? { base: provisioned.base } : {}),
+    });
+    if (!mounted.ok) return startFailed(context, chat.id, mounted);
+    const details = await context.workspaces.get(mounted.value.workspaceId);
+    workspace = { workspaceId: mounted.value.workspaceId, title: details.ok ? details.value.name : provisioned.title, mountedByChat: true };
+    const kept = await update(context, chat.id, (current) => ({ ...current, workspace }));
+    if (!kept.ok) {
+      await context.workspaces.unmount(mounted.value.workspaceId);
+      return startFailed(context, chat.id, kept);
+    }
+  }
+  const options: SessionCreateOptions = { runtimeId: chat.runtimeId, workerId: chat.workerId };
+  if (workspace) options.workspaceId = workspace.workspaceId;
+  if (chat.agentDefinitionId) options.agentDefinitionId = chat.agentDefinitionId;
+  if (chat.personaId) options.personaId = chat.personaId;
+  if (chat.model) options.model = chat.model;
+  const created = await context.sessions.create(options);
+  if (!created.ok) {
+    if (workspace?.mountedByChat) {
+      await context.workspaces.unmount(workspace.workspaceId);
+      await update(context, chat.id, (current) => ({ ...current, workspace: current.workspace ? { ...current.workspace, mountedByChat: false } : null }));
+    }
+    return startFailed(context, chat.id, created);
+  }
+  const session = created.value;
+  const recorded = await update(context, chat.id, (current) => ({
+    ...current,
+    sessionId: session.id,
+    agentSessionId: agentSessionOf(session, current.agentSessionId),
+    starting: prompt === undefined ? null : current.starting,
+    startFailure: null,
+  }));
+  if (!recorded.ok) {
+    await context.sessions.release(session.id);
+    if (workspace?.mountedByChat) await context.workspaces.unmount(workspace.workspaceId);
+    return startFailed(context, chat.id, recorded);
+  }
+  if (prompt === undefined) return { sessionId: session.id, turn: null };
+  const sent = await send(context, recorded.value, session, prompt);
+  if ('ok' in sent) return startFailed(context, chat.id, sent);
+  return { sessionId: session.id, turn: { turnId: sent.turnId as string, queued: sent.queued } };
+}
+
+async function startFailed<F extends Failure | Unavailable>(context: MethodCallContext, chatId: string, failed: F): Promise<F> {
+  const kept = await update(context, chatId, (current) => ({ ...current, starting: null, startFailure: failed.message }));
+  if (!kept.ok) void context.logger.warn('A chat did not start, and that could not be kept on it', { chatId, reason: failed.message, keeping: kept.message });
+  return failed;
 }
 
 export async function promptChat(context: MethodCallContext, input: Record<string, unknown>): Promise<Answer<PromptChatOutput>> {
   const prompt = readPrompt(input.prompt);
   if (prompt === null) return bad(context, 'prompt', 'error.prompt_shape');
-  const live = await liveSession(context, input.chatId);
-  if ('ok' in live) return live;
-  return send(context, live.chat, live.session, prompt);
+  const loaded = await loadChat(context, input.chatId);
+  if ('ok' in loaded) return loaded;
+  const live = await sessionOf(context, loaded.chat);
+  if (live && !live.ok) return live;
+  if (live && live.ok) return send(context, loaded.chat, live.value, prompt);
+  if (stillStarting(loaded.chat)) return failure(t(context, 'error.starting'), true);
+  const started = restart(context, loaded.chat.id, prompt);
+  if (!wantsWait(input)) {
+    void started;
+    return { sessionId: null, turnId: null, queued: true };
+  }
+  return started;
 }
 
-export async function resumeChat(context: MethodCallContext, input: Record<string, unknown>): Promise<Answer<{ sessionId: string }>> {
-  const live = await liveSession(context, input.chatId);
-  if ('ok' in live) return live;
-  return { sessionId: live.session.id };
+// Starts a released chat again on a fresh session that continues its conversation, then sends the prompt, if any;
+// the record says it is starting meanwhile, and keeps why when it does not.
+async function restart(context: MethodCallContext, chatId: string, prompt: ChatPrompt | null): Promise<Answer<PromptChatOutput>> {
+  const marked = await update(context, chatId, (current) => ({ ...current, starting: { since: Date.now(), prompt }, startFailure: null }));
+  if (!marked.ok) return marked;
+  const loaded = await loadChat(context, chatId);
+  if ('ok' in loaded) return startFailed(context, chatId, loaded);
+  const live = await sessionOf(context, loaded.chat);
+  const started = live && live.ok ? { chat: loaded.chat, session: live.value } : await startSession(context, loaded.chat, loaded.revision);
+  if ('ok' in started) return startFailed(context, chatId, started);
+  if (prompt === null) {
+    const done = await update(context, chatId, (current) => ({ ...current, starting: null }));
+    if (!done.ok) return done;
+    return { sessionId: started.session.id, turnId: null, queued: false };
+  }
+  const sent = await send(context, started.chat, started.session, prompt);
+  if ('ok' in sent) return startFailed(context, chatId, sent);
+  return sent;
+}
+
+export async function resumeChat(context: MethodCallContext, input: Record<string, unknown>): Promise<Answer<{ sessionId: string | null }>> {
+  const loaded = await loadChat(context, input.chatId);
+  if ('ok' in loaded) return loaded;
+  const live = await sessionOf(context, loaded.chat);
+  if (live && !live.ok) return live;
+  if (live && live.ok) return { sessionId: live.value.id };
+  if (stillStarting(loaded.chat)) return failure(t(context, 'error.starting'), true);
+  const started = restart(context, loaded.chat.id, null);
+  if (!wantsWait(input)) {
+    void started;
+    return { sessionId: null };
+  }
+  const outcome = await started;
+  if ('ok' in outcome) return outcome;
+  return { sessionId: outcome.sessionId };
 }
 
 export async function releaseChat(context: MethodCallContext, input: Record<string, unknown>): Promise<Answer<{ released: boolean }>> {
@@ -283,6 +372,7 @@ export async function releaseChat(context: MethodCallContext, input: Record<stri
     agentSessionId,
     workspace,
     releasedAt: current.releasedAt ?? Date.now(),
+    starting: null,
   }));
   if (!updated.ok) return updated;
   return { released: chat.sessionId !== null };

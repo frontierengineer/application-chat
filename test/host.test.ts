@@ -78,7 +78,7 @@ test('create-chat mounts a new workspace for the chat, and release unmounts it a
 test('a chat whose session ended elsewhere is resumed by its next prompt, with the persona not sent again', async () => {
   const { install, call } = setup();
   const created = value(await call<CreateChatOutput>('create-chat', { runtimeId: 'claude', workerId: 'w1', personaId: 'calm', prompt: 'hello' }));
-  install.sessionMap.delete(created.sessionId);
+  install.sessionMap.delete(created.sessionId as string);
   const sent = value(await call<PromptChatOutput>('prompt-chat', { chatId: created.chatId, prompt: [{ type: 'text', text: 'again' }] }));
   assert.equal(sent.sessionId, 'session-2');
   assert.deepEqual(install.createOptions[1], { runtimeId: 'claude', workerId: 'w1', agentSessionId: 'agent-session-1' });
@@ -127,6 +127,41 @@ test('list-chats answers the most recently prompted first, and remove-chat relea
   value(await call('prompt-chat', { chatId: first.chatId, prompt: 'bump' }));
   assert.deepEqual(value(await call<{ chats: ChatRecord[] }>('list-chats', {})).chats.map((chat) => chat.title), ['First', 'Second']);
   assert.deepEqual(value(await call('remove-chat', { chatId: second.chatId })), { removed: true });
-  assert.ok(install.released.includes(second.sessionId));
+  assert.ok(install.released.includes(second.sessionId as string));
   assert.deepEqual(value(await call<{ chats: ChatRecord[] }>('list-chats', {})).chats.map((chat) => chat.title), ['First']);
+});
+
+async function until(check: () => boolean, what: string): Promise<void> {
+  for (let attempt = 0; attempt < 100 && !check(); attempt += 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  assert.ok(check(), `timed out waiting for ${what}`);
+}
+
+test('create-chat with wait false answers once the chat is recorded as starting, and the record follows the start to the first prompt', async () => {
+  const { install, call } = setup();
+  const created = value(await call<CreateChatOutput>('create-chat', { runtimeId: 'claude', workerId: 'w1', prompt: 'Tidy the README', wait: false }));
+  assert.deepEqual([created.sessionId, created.turn], [null, null]);
+  const at = `chats/${created.chatId}`;
+  const first = install.store.peek(at) as ChatRecord;
+  assert.equal(first.sessionId, null);
+  assert.equal(first.starting?.prompt, 'Tidy the README');
+  await until(() => (install.store.peek(at) as ChatRecord).starting === null, 'the start to finish');
+  const chat = install.store.peek(at) as ChatRecord;
+  assert.equal(chat.sessionId, 'session-1');
+  assert.equal(chat.startFailure, null);
+  assert.deepEqual(install.sessionMap.get('session-1')?.prompts, ['Tidy the README']);
+});
+
+test('a chat that does not start in the background keeps why, and prompt-chat with wait false starts it again and sends the prompt', async () => {
+  const { install, call } = setup();
+  install.runtimes[0]!.reports.w1 = { ready: false, reason: 'Not signed in.', models: [] };
+  const created = value(await call<CreateChatOutput>('create-chat', { runtimeId: 'claude', workerId: 'w1', prompt: 'Hello', wait: false }));
+  const at = `chats/${created.chatId}`;
+  await until(() => (install.store.peek(at) as ChatRecord).startFailure !== null, 'the failure to be kept');
+  assert.equal((install.store.peek(at) as ChatRecord).startFailure, 'Claude Code is not ready on this worker.');
+  install.runtimes[0]!.reports.w1 = { ready: true, reason: null, models: [] };
+  assert.deepEqual(value(await call<PromptChatOutput>('prompt-chat', { chatId: created.chatId, prompt: 'Hello again', wait: false })), { sessionId: null, turnId: null, queued: true });
+  await until(() => (install.store.peek(at) as ChatRecord).sessionId !== null && (install.store.peek(at) as ChatRecord).starting === null, 'the chat to start again');
+  const chat = install.store.peek(at) as ChatRecord;
+  assert.equal(chat.startFailure, null);
+  assert.deepEqual(install.sessionMap.get(chat.sessionId as string)?.prompts, ['Hello again']);
 });

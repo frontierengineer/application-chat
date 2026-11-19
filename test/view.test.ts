@@ -181,6 +181,22 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.close();
 });
 
+test('a chat whose agent takes long to start shows at once as starting, with its prompt, then runs', {}, async () => {
+  const page = await open('desktop');
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.evaluate('window.install.createDelay = 3000');
+  await page.getByLabel('Prompt', { exact: true }).fill('Review the open pull request');
+  await page.getByLabel('Prompt', { exact: true }).press('Enter');
+  await page.getByText('Starting the agent.').waitFor({ timeout: 1000 });
+  assert.equal(await page.locator('form[aria-label="Send a prompt"] button[type="submit"]').isDisabled(), true, 'nothing more is sent while the agent starts');
+  assert.equal(await page.locator('.chat-list frontier-badge').first().textContent(), 'Starting');
+  assert.equal(await page.locator('.you').first().textContent(), 'You said:Review the open pull request');
+  await shot(page, 'desktop-starting');
+  await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the agent to start and run the prompt');
+  assert.equal(await page.locator('.you').count(), 1);
+  await page.close();
+});
+
 test('the panel shows the list or one chat at a time, with a way back', {}, async () => {
   const page = await open('panel', { width: 390, height: 780 });
   await page.getByRole('heading', { name: 'Chats' }).waitFor();

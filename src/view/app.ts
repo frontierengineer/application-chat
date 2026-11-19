@@ -299,14 +299,14 @@ export class ChatApp {
         session,
         models: () => this.runtimes.find((runtime) => runtime.id === chat.runtimeId)?.on(chat.workerId)?.models ?? [],
         prompt: async (prompt: ChatPrompt) => {
-          const answer = await this.call<PromptChatOutput>('prompt-chat', { chatId: chat.id, prompt: prompt as unknown });
-          if (answer.ok && !this.sessions.has(answer.value.sessionId)) await this.reloadSession(answer.value.sessionId, 'added');
+          const answer = await this.call<PromptChatOutput>('prompt-chat', { chatId: chat.id, prompt: prompt as unknown, wait: false });
+          if (answer.ok && answer.value.sessionId !== null && !this.sessions.has(answer.value.sessionId)) await this.reloadSession(answer.value.sessionId, 'added');
           return answer;
         },
         release: async () => this.call('release-chat', { chatId: chat.id }),
         resume: async () => {
-          const answer = await this.call<{ sessionId: string }>('resume-chat', { chatId: chat.id });
-          if (answer.ok) await this.reloadSession(answer.value.sessionId, 'added');
+          const answer = await this.call<{ sessionId: string | null }>('resume-chat', { chatId: chat.id, wait: false });
+          if (answer.ok && answer.value.sessionId !== null) await this.reloadSession(answer.value.sessionId, 'added');
           return answer.ok ? { ok: true, value: undefined } : answer;
         },
         rename: async (title: string) => {
@@ -420,9 +420,11 @@ export function mountChat(context: DesktopContext | PanelContext, layout: Layout
   return new ChatApp(context, layout).start();
 }
 
-export type State = { state: 'running' | 'queued' | 'idle' | 'inactive' | 'released'; label: string };
+export type State = { state: 'running' | 'queued' | 'idle' | 'inactive' | 'released' | 'starting' | 'failed'; label: string };
 
 export function stateOf(session: Session | null, chat: ChatRecord | null, t: (token: string) => string): State {
+  if (chat?.starting) return { state: 'starting', label: t('state.starting') };
+  if (!session && chat?.startFailure) return { state: 'failed', label: t('state.failed') };
   if (!session) return chat?.releasedAt ? { state: 'released', label: t('state.released') } : { state: 'released', label: t('state.ended') };
   if (!session.isActive()) return { state: 'inactive', label: t('state.inactive') };
   const turn = session.currentTurn();
@@ -431,7 +433,7 @@ export function stateOf(session: Session | null, chat: ChatRecord | null, t: (to
   return { state: 'idle', label: t('state.idle') };
 }
 
-const tones: Record<State['state'], string> = { running: 'success', queued: 'warning', inactive: 'warning', idle: 'muted', released: 'muted' };
+const tones: Record<State['state'], string> = { running: 'success', queued: 'warning', inactive: 'warning', idle: 'muted', released: 'muted', starting: 'accent', failed: 'danger' };
 
 export function stateBadge(state: State): HTMLElement {
   return ds('frontier-badge', { 'data-tone': tones[state.state], 'data-state': state.state }, state.label);

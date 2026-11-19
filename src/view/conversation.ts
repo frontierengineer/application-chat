@@ -8,7 +8,7 @@ import type {
   TurnEvent,
   TurnFinishedEvent,
 } from '../../../application';
-import type { ChatPrompt, ChatRecord } from '../shared.ts';
+import { type ChatPrompt, type ChatRecord, promptText } from '../shared.ts';
 import { type Attachment, buildPrompt } from './attachments.ts';
 import { stateBadge, stateOf } from './app.ts';
 import { ds, h, icon } from './dom.ts';
@@ -25,7 +25,7 @@ export interface ChatHandle {
   meta(): string;
   session(): Session | null;
   models(): { label: string; versions: AvailableModelVersion[] }[];
-  prompt(prompt: ChatPrompt): Promise<Result<{ turnId: string; queued: boolean }>>;
+  prompt(prompt: ChatPrompt): Promise<Result<{ turnId: string | null; queued: boolean }>>;
   release(): Promise<Result>;
   resume: (() => Promise<Result>) | null;
   rename: ((title: string) => Promise<Result>) | null;
@@ -315,7 +315,8 @@ export class Conversation {
   private drawAll(): void {
     for (const element of this.itemElements.values()) element.remove();
     this.itemElements.clear();
-    const pending = this.host.pending(this.handle.key);
+    const starting = this.handle.record?.starting?.prompt ?? null;
+    const pending = this.host.pending(this.handle.key) ?? (starting === null ? null : promptText(starting));
     const held = pending !== null && this.model.items.some((item) => item.kind === 'user' && item.text.trim() === pending.trim());
     if (held) this.host.settled(this.handle.key);
     if (pending !== null && !held) {
@@ -335,7 +336,9 @@ export class Conversation {
     const turn = this.handle.session()?.currentTurn() ?? null;
     const last = this.model.items[this.model.items.length - 1];
     const streaming = last && (last.kind === 'text' || last.kind === 'thinking') && last.partial;
-    if (turn && turn.startedAt !== null && !streaming) {
+    if (this.handle.record?.starting && !this.handle.session()) {
+      this.typing.replaceChildren(h('span', { class: 'typing' }, h('span', {}), h('span', {}), h('span', {}), ` ${this.host.t('conversation.starting')}`));
+    } else if (turn && turn.startedAt !== null && !streaming) {
       this.typing.replaceChildren(h('span', { class: 'typing' }, h('span', {}), h('span', {}), h('span', {}), ` ${this.host.t('conversation.working')}`));
     } else {
       this.typing.replaceChildren();
@@ -479,7 +482,9 @@ export class Conversation {
     const t = this.host.t;
     const session = this.handle.session();
     const notices: Notice[] = [];
-    if (!session && this.handle.record?.releasedAt) {
+    if (!session && this.handle.record?.startFailure && !this.handle.record.starting) {
+      notices.push({ tone: 'danger', title: t('notice.start_failed_title'), text: this.handle.record.startFailure, ...(this.handle.resume ? { action: { label: t('notice.try_again'), run: () => void this.resume() } } : {}) });
+    } else if (!session && this.handle.record?.releasedAt && !this.handle.record.starting) {
       notices.push({ tone: 'info', title: t('notice.released_title'), text: t('notice.released'), ...(this.handle.resume ? { action: { label: t('conversation.resume'), run: () => void this.resume() } } : {}) });
     }
     if (session && !session.isActive()) notices.push({ tone: 'warning', title: t('notice.inactive_title'), text: session.inactiveReason() ?? t('notice.inactive') });
@@ -529,11 +534,14 @@ export class Conversation {
     this.status.replaceChildren(...statusParts);
     this.stopButton.hidden = !turn;
     const inactive = session !== null && !session.isActive();
-    this.sendButton.disabled = this.sending || inactive;
+    const starting = Boolean(this.handle.record?.starting);
+    this.sendButton.disabled = this.sending || inactive || starting;
     this.sendButton.setAttribute('aria-busy', String(this.sending));
     this.sendButton.setAttribute('aria-label', turn ? t('composer.queue') : t('composer.send'));
     this.sendButton.title = turn ? t('composer.queue') : t('composer.send');
-    this.hint.textContent = inactive
+    this.hint.textContent = starting
+      ? t('composer.starting_hint')
+      : inactive
       ? t('composer.inactive_hint')
       : session && !this.handle.session()?.promptCapabilities().image && this.attachments.some((file) => file.type.startsWith('image/'))
         ? t('composer.no_images_hint')
@@ -570,7 +578,7 @@ export class Conversation {
     const answer = await this.handle.prompt(built.prompt);
     this.sending = false;
     if (answer.ok) {
-      if (answer.value.queued) this.queued = { turnId: answer.value.turnId, text };
+      if (answer.value.queued && answer.value.turnId !== null) this.queued = { turnId: answer.value.turnId, text };
       this.textarea.value = '';
       this.attachments = [];
       this.host.saveDraft(this.handle.key, '');

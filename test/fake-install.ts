@@ -229,6 +229,8 @@ export interface FakeRuntime {
 }
 
 export class FakeInstall {
+  // How long sessions.create takes, as launching a real agent does.
+  createDelay = 0;
   readonly store = new FakeStore();
   readonly sessionMap = new Map<string, FakeSession>();
   runtimes: FakeRuntime[] = [];
@@ -292,6 +294,7 @@ export class FakeInstall {
       sessions: {
         async create(options: SessionCreateOptions) {
           install.createOptions.push(options);
+          if (install.createDelay > 0) await new Promise((resolve) => setTimeout(resolve, install.createDelay));
           if (install.createFailure) return install.createFailure;
           const runtime = install.runtimes.find((entry) => entry.id === options.runtimeId);
           if (!runtime?.reports[options.workerId]?.ready) return { ok: false, unavailable: true, message: `${runtime?.title ?? 'The runtime'} is not ready on this worker.` };
