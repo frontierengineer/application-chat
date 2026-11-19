@@ -211,7 +211,12 @@ export class FakeSession {
 
   get transcript() {
     return {
-      history: async (): Promise<Result<TranscriptEvent[]>> => (this.replay ? { ok: true, value: [...this.history] } : { ok: false, unavailable: true, message: 'This runtime cannot replay.' }),
+      // As a Worker answers: an agent cannot replay while it runs a turn.
+      history: async (): Promise<Result<TranscriptEvent[]>> => {
+        if (!this.replay) return { ok: false, unavailable: true, message: 'This runtime cannot replay.' };
+        if (this.turn !== null) return { ok: false, unavailable: true, message: 'The agent is running a turn.' };
+        return { ok: true, value: [...this.history] };
+      },
       follow: (handler: Handler<TranscriptEvent>) => this.followers.add(handler),
     };
   }

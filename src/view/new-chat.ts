@@ -11,7 +11,7 @@ import type {
   WorkspaceProvisioner,
 } from '../../../application';
 import { type CreateChatInput, type CreateChatOutput, applicationId } from '../shared.ts';
-import { fill, h } from './dom.ts';
+import { ds, fill, h, icon } from './dom.ts';
 import type { RenderEnvironment } from './render-items.ts';
 
 export interface NewChatDefaults {
@@ -24,7 +24,9 @@ export interface NewChatHost extends RenderEnvironment {
   layout: 'desktop' | 'panel';
   defaults(): NewChatDefaults;
   saveDefaults(defaults: NewChatDefaults): void;
-  created(chatId: string): void;
+  created(chatId: string, prompt: string): void;
+  // The runtimes as this form last listed them, so the list beside it names them too.
+  runtimesListed(runtimes: Runtime[]): void;
   cancel: (() => void) | null;
 }
 
@@ -61,6 +63,7 @@ function field(label: string, control: HTMLElement, help?: string | null): HTMLE
 
 export class NewChatForm {
   readonly element: HTMLElement;
+  private readonly body: HTMLElement;
   private readonly host: NewChatHost;
   private data: Data = { runtimes: [], workers: [], workspaces: [], provisioners: [], definitions: [], personas: [] };
   private runtimeId = '';
@@ -102,12 +105,13 @@ export class NewChatForm {
       this.readiness,
       this.options,
       this.problem,
-      h('div', { class: 'actions' },
-        host.cancel ? h('button', { type: 'button', onclick: () => host.cancel?.() }, t('new.cancel')) : null,
+      ds('frontier-row', { justify: 'end' },
+        host.cancel ? h('button', { type: 'button', 'data-variant': 'ghost', onclick: () => host.cancel?.() }, t('new.cancel')) : null,
         this.start,
       ),
     );
-    this.element = h('section', { class: 'main new-chat' }, this.form);
+    this.body = ds('frontier-scroll', {}, this.form);
+    this.element = h('main', { class: 'main new-chat' }, ds('frontier-stack', { fill: true, gap: '0' }, this.body));
     this.form.addEventListener('submit', (event) => {
       event.preventDefault();
       void this.submit();
@@ -149,6 +153,7 @@ export class NewChatForm {
       definitions: definitions.ok ? definitions.value : [],
       personas: personas.ok ? personas.value : [],
     };
+    if (runtimes.ok) this.host.runtimesListed(runtimes.value);
     const failed = [runtimes, workers].find((answer) => !answer.ok);
     this.problem.textContent = failed && !failed.ok ? failed.message : '';
     this.chooseDefaults();
@@ -203,14 +208,15 @@ export class NewChatForm {
     const t = this.host.t;
     if (this.data.runtimes.length === 0 || this.data.workers.length === 0) {
       const runtimesMissing = this.data.runtimes.length === 0;
-      this.element.replaceChildren(h('div', { class: 'empty' },
+      this.body.replaceChildren(ds('frontier-stack', { fill: true, justify: 'center' }, ds('frontier-empty', {},
+        icon('chat'),
         h('h2', {}, t(runtimesMissing ? 'new.no_runtimes_heading' : 'new.no_workers_heading')),
         h('p', {}, t(runtimesMissing ? 'new.no_runtimes' : 'new.no_workers')),
-        h('button', { type: 'button', onclick: () => void this.load() }, t('new.check_again')),
-      ));
+        h('button', { type: 'button', 'data-variant': 'primary', onclick: () => void this.load() }, t('new.check_again')),
+      )));
       return;
     }
-    if (!this.element.contains(this.form)) this.element.replaceChildren(this.form);
+    if (!this.body.contains(this.form)) this.body.replaceChildren(this.form);
     const runtime = this.runtime();
     const worker = this.worker();
     const report = runtime?.on(this.workerId) ?? null;
@@ -337,7 +343,8 @@ export class NewChatForm {
       this.prompt.focus();
       return;
     }
-    const input: CreateChatInput = { runtimeId: this.runtimeId, workerId: this.workerId, prompt: this.prompt.value };
+    const prompt = this.prompt.value;
+    const input: CreateChatInput = { runtimeId: this.runtimeId, workerId: this.workerId, prompt };
     if (this.title.value.trim() !== '') input.title = this.title.value.trim();
     if (this.modelId !== '') input.model = { modelId: this.modelId, settings: this.settings };
     if (this.definition.value !== '') input.agentDefinitionId = this.definition.value;
@@ -359,7 +366,7 @@ export class NewChatForm {
       this.host.saveDefaults({ runtimeId: this.runtimeId, workerId: this.workerId });
       this.prompt.value = '';
       this.title.value = '';
-      this.host.created(answer.value.chatId);
+      this.host.created(answer.value.chatId, prompt);
     } else {
       this.problem.textContent = answer.message;
     }

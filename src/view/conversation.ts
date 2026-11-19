@@ -10,7 +10,8 @@ import type {
 } from '../../../application';
 import type { ChatPrompt, ChatRecord } from '../shared.ts';
 import { type Attachment, buildPrompt } from './attachments.ts';
-import { h } from './dom.ts';
+import { stateBadge, stateOf } from './app.ts';
+import { ds, h, icon } from './dom.ts';
 import { bytes, clock, money, tokens } from './format.ts';
 import { type RenderEnvironment, renderItem, stopReasonText } from './render-items.ts';
 import { type Item, TranscriptModel } from './transcript-model.ts';
@@ -34,6 +35,10 @@ export interface ChatHandle {
 export interface ConversationHost extends RenderEnvironment {
   layout: 'desktop' | 'panel';
   back(): void;
+  // The prompt a chat was started with, shown at once until the transcript holds it.
+  pending(key: string): string | null;
+  settled(key: string): void;
+  runtimeTitle(runtimeId: string): string;
   draft(key: string): string;
   saveDraft(key: string, text: string): void;
   promptName(title: string, value: string): Promise<string | null>;
@@ -53,6 +58,8 @@ export class Conversation {
   private subscriptions: Subscription[] = [];
   private boundSessionId: string | null = null;
   private replayUnavailable = false;
+  // History was asked for while a turn ran, when an agent cannot replay; asked again when the turn ends.
+  private historyWaiting = false;
   private historyProblem: string | null = null;
   private actionProblem: string | null = null;
   private lastFinished: TurnFinishedEvent | null = null;
@@ -64,20 +71,23 @@ export class Conversation {
   private disposed = false;
 
   private readonly titleElement = h('h2', {});
-  private readonly metaElement = h('p', { class: 'meta' });
-  private readonly controls = h('div', { class: 'controls' });
-  private readonly notices = h('div', { role: 'status' });
-  private readonly transcript = h('div', { class: 'transcript', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions', tabindex: '0' });
+  private readonly badges = ds('frontier-row', { wrap: true, gap: '2' });
+  private readonly metaElement = h('small', { class: 'meta' });
+  private readonly controls = ds('frontier-row', { gap: '2', class: 'controls' });
+  private readonly notices = h('div', { class: 'notices' });
+  private readonly scroller = ds('frontier-scroll', { role: 'region', tabindex: '0' });
+  private readonly transcript = ds('frontier-stack', { class: 'transcript', padding: '5', gap: '4', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
   private readonly typing = h('div', { class: 'typing-row' });
-  private readonly jump = h('button', { type: 'button', class: 'jump', 'data-variant': 'primary', hidden: true });
-  private readonly textarea = h('textarea', { rows: '1' });
+  private readonly jump = h('button', { type: 'button', class: 'jump', 'data-size': 'small', hidden: true });
+  private readonly textarea = h('textarea', { rows: '2' });
   private readonly chips = h('div', { class: 'chips' });
+  private readonly choices = ds('frontier-row', { wrap: true, gap: '2' });
   private readonly status = h('span', { class: 'status', 'aria-live': 'polite' });
   private readonly sendButton = h('button', { type: 'submit', 'data-variant': 'primary' });
-  private readonly stopButton = h('button', { type: 'button', 'data-variant': 'ghost', 'data-tone': 'danger' });
+  private readonly stopButton = h('button', { type: 'button', 'data-variant': 'outline' });
   private readonly attachButton = h('button', { type: 'button', 'data-variant': 'ghost' });
   private readonly fileInput = h('input', { type: 'file', multiple: true, class: 'visually-hidden', tabindex: '-1' });
-  private readonly problem = h('p', { class: 'problem', role: 'alert' });
+  private readonly problem = h('p', { class: 'problem', 'data-tone': 'danger', role: 'alert' });
   private readonly hint = h('p', { class: 'hint' });
   private readonly composer: HTMLFormElement;
 
@@ -85,32 +95,38 @@ export class Conversation {
     this.host = host;
     this.handle = handle;
     const t = host.t;
-    this.jump.textContent = t('conversation.jump');
+    this.jump.append(icon('down'), t('conversation.jump'));
     this.textarea.setAttribute('aria-label', t('composer.label'));
     this.textarea.placeholder = t('composer.placeholder');
-    this.sendButton.textContent = t('composer.send');
-    this.stopButton.textContent = t('composer.stop');
-    this.attachButton.textContent = t('composer.attach');
+    this.sendButton.setAttribute('aria-label', t('composer.send'));
+    this.sendButton.append(icon('send'));
+    this.stopButton.append(icon('stop'), t('composer.stop'));
     this.attachButton.setAttribute('aria-label', t('composer.attach_label'));
-    this.composer = h('form', { class: 'composer', 'aria-label': t('composer.form') },
-      h('div', { class: 'composer-box' },
-        this.chips,
-        this.textarea,
-        h('div', { class: 'row' }, this.attachButton, this.fileInput, this.status, h('span', { class: 'spacer' }), this.stopButton, this.sendButton),
+    this.attachButton.append(icon('attach'));
+    this.scroller.setAttribute('aria-label', t('conversation.transcript'));
+    this.composer = h('form', { 'aria-label': t('composer.form') },
+      ds('frontier-card', { class: 'composer' },
+        ds('frontier-stack', { gap: '2' },
+          this.chips,
+          this.textarea,
+          ds('frontier-row', { gap: '2' }, this.choices, this.status, ds('frontier-spacer'), this.attachButton, this.fileInput, this.stopButton, this.sendButton),
+        ),
       ),
-      this.problem,
-      this.hint,
+      h('div', { class: 'below-composer' }, this.problem, this.hint),
     );
-    this.element = h('section', { class: 'main', 'aria-label': handle.title() },
-      h('header', { class: 'conversation-header' },
-        host.layout === 'panel' ? h('button', { type: 'button', 'data-variant': 'ghost', onclick: () => host.back() }, t('conversation.back')) : null,
-        h('div', { class: 'titles' }, this.titleElement, this.metaElement),
-        this.controls,
+    this.element = h('main', { class: 'main', 'aria-label': handle.title() },
+      ds('frontier-stack', { fill: true, gap: '0' },
+        ds('frontier-row', { class: 'conversation-header', padding: '4', gap: '3', align: 'start' },
+          host.layout === 'panel' ? h('button', { type: 'button', 'data-variant': 'ghost', 'aria-label': t('conversation.back'), onclick: () => host.back() }, icon('back')) : null,
+          ds('frontier-stack', { gap: '1', class: 'titles' }, this.titleElement, this.badges),
+          this.controls,
+        ),
+        this.notices,
+        this.scroller,
+        this.composer,
       ),
-      this.notices,
-      this.transcript,
-      this.composer,
     );
+    this.scroller.append(this.transcript);
     this.transcript.append(this.typing, this.jump);
     this.wire();
     this.textarea.value = host.draft(handle.key);
@@ -157,7 +173,7 @@ export class Conversation {
     });
     this.stopButton.addEventListener('click', () => void this.stop());
     this.jump.addEventListener('click', () => this.scrollToEnd());
-    this.transcript.addEventListener('scroll', () => {
+    this.scroller.addEventListener('scroll', () => {
       this.jump.hidden = this.nearEnd();
     });
   }
@@ -200,19 +216,25 @@ export class Conversation {
   }
 
   private async loadHistory(session: Session): Promise<void> {
+    const turnRunning = session.currentTurn() !== null;
     const history = await session.transcript.history();
     if (this.disposed || session.id !== this.boundSessionId) return;
+    this.historyWaiting = false;
     if (history.ok) {
       this.replayUnavailable = false;
       this.historyProblem = null;
       this.model.reset(history.value);
       this.drawAll();
       this.scrollToEnd();
+    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null)) {
+      // An agent cannot replay while it runs a turn: what streams in is shown, and the whole conversation once the turn ends.
+      this.historyWaiting = true;
     } else if (history.unavailable) {
       this.replayUnavailable = true;
     } else {
       this.historyProblem = history.message;
     }
+    if (!history.ok && this.itemElements.size === 0) this.drawAll();
     this.drawNotices();
     this.drawHeader();
   }
@@ -221,7 +243,7 @@ export class Conversation {
     window.clearTimeout(this.reloadTimer);
     this.reloadTimer = window.setTimeout(() => {
       const session = this.handle.session();
-      if (session && !this.replayUnavailable) void this.loadHistory(session);
+      if (session && (!this.replayUnavailable || this.historyWaiting)) void this.loadHistory(session);
     }, 400);
   }
 
@@ -261,6 +283,7 @@ export class Conversation {
   private drawItem(item: Item): void {
     const existing = this.itemElements.get(item.key);
     const element = renderItem(item, this.host, existing);
+    if (item.kind === 'user' && item.text.trim() === this.host.pending(this.handle.key)?.trim()) this.settlePending();
     if (!existing) {
       this.itemElements.get('empty')?.remove();
       this.itemElements.delete('empty');
@@ -269,11 +292,26 @@ export class Conversation {
     }
   }
 
+  // The prompt a chat was started with shows at once, before the agent's
+  // transcript holds it, and gives way to the transcript's own turn.
+  private settlePending(): void {
+    this.itemElements.get('pending')?.remove();
+    this.itemElements.delete('pending');
+    this.host.settled(this.handle.key);
+  }
+
   private drawAll(): void {
     for (const element of this.itemElements.values()) element.remove();
     this.itemElements.clear();
-    if (this.model.items.length === 0) {
-      const empty = h('div', { class: 'empty' }, h('h2', {}, this.host.t('conversation.empty_heading')), h('p', {}, this.host.t('conversation.empty')));
+    const pending = this.host.pending(this.handle.key);
+    const held = pending !== null && this.model.items.some((item) => item.kind === 'user' && item.text.trim() === pending.trim());
+    if (held) this.host.settled(this.handle.key);
+    if (pending !== null && !held) {
+      const element = renderItem({ kind: 'user', key: 'pending', text: pending, attachments: [], timestamp: null }, this.host);
+      this.itemElements.set('pending', element);
+      this.transcript.insertBefore(element, this.typing);
+    } else if (this.model.items.length === 0) {
+      const empty = ds('frontier-empty', {}, icon('chat'), h('h2', {}, this.host.t('conversation.empty_heading')), h('p', {}, this.host.t('conversation.empty')));
       this.itemElements.set('empty', empty);
       this.transcript.insertBefore(empty, this.typing);
     }
@@ -293,11 +331,11 @@ export class Conversation {
   }
 
   private nearEnd(): boolean {
-    return this.transcript.scrollHeight - this.transcript.scrollTop - this.transcript.clientHeight < 80;
+    return this.scroller.scrollHeight - this.scroller.scrollTop - this.scroller.clientHeight < 80;
   }
 
   private scrollToEnd(): void {
-    this.transcript.scrollTop = this.transcript.scrollHeight;
+    this.scroller.scrollTop = this.scroller.scrollHeight;
     this.jump.hidden = true;
   }
 
@@ -310,36 +348,10 @@ export class Conversation {
     const t = this.host.t;
     const session = this.handle.session();
     this.titleElement.textContent = this.handle.title();
+    this.element.setAttribute('aria-label', this.handle.title());
     this.metaElement.textContent = this.handle.meta();
+    this.badges.replaceChildren(stateBadge(stateOf(session, this.handle.record, t)), this.metaElement);
     const controls: HTMLElement[] = [];
-    if (session) {
-      const modes = session.modes();
-      if (modes.available.length > 0) {
-        const select = h('select', { 'aria-label': t('conversation.mode') },
-          ...modes.available.map((mode) => h('option', { value: mode.id, selected: mode.id === modes.current, title: mode.description ?? undefined }, mode.name)));
-        select.addEventListener('change', async () => {
-          const answer = await session.setMode(select.value);
-          this.reportAction(answer);
-        });
-        controls.push(h('label', { class: 'inline' }, t('conversation.mode'), select));
-      }
-      const groups = this.handle.models();
-      if (groups.length > 0) {
-        const current = session.model();
-        const select = h('select', { 'aria-label': t('conversation.model') },
-          h('option', { value: '', selected: current === null }, t('conversation.default_model')),
-          ...groups.map((group) => h('optgroup', { label: group.label },
-            ...group.versions.map((version) => h('option', { value: version.id, selected: current?.modelId === version.id }, version.label)))));
-        select.addEventListener('change', async () => {
-          if (select.value === '') return;
-          const answer = await session.setModel({ modelId: select.value });
-          this.reportAction(answer, t('conversation.model_unavailable'));
-        });
-        controls.push(h('label', { class: 'inline' }, t('conversation.model'), select));
-        const version = groups.flatMap((group) => group.versions).find((entry) => entry.id === current?.modelId);
-        for (const setting of version?.settings ?? []) controls.push(this.settingControl(session, setting, current?.settings ?? {}));
-      }
-    }
     const usage = this.model.usage;
     if (usage && usage.contextWindow > 0) {
       const share = Math.min(1, usage.contextUsed / usage.contextWindow);
@@ -350,26 +362,74 @@ export class Conversation {
         usage.costAmount !== null && usage.costCurrency ? ` · ${money(usage.costAmount, usage.costCurrency, this.host.language)}` : '',
       ));
     }
-    const actions: HTMLElement[] = [];
-    if (this.handle.rename) actions.push(h('button', { type: 'button', 'data-variant': 'ghost', onclick: () => void this.rename() }, t('conversation.rename')));
-    if (session) actions.push(h('button', { type: 'button', 'data-variant': 'ghost', onclick: () => void this.release() }, t('conversation.release')));
-    else if (this.handle.resume) actions.push(h('button', { type: 'button', 'data-variant': 'ghost', onclick: () => void this.resume() }, t('conversation.resume')));
-    if (this.handle.remove) actions.push(h('button', { type: 'button', 'data-variant': 'ghost', 'data-tone': 'danger', onclick: () => void this.remove() }, t('conversation.remove')));
-    if (this.host.layout === 'panel' && actions.length > 0) {
-      const more = h('details', { class: 'more' }, h('summary', {}, t('conversation.more')), h('div', { class: 'menu' }, ...actions));
-      for (const action of actions) action.addEventListener('click', () => (more.open = false));
-      controls.push(more);
-    } else {
-      controls.push(...actions);
+    const items: HTMLElement[] = [];
+    const item = (value: string, label: string, tone?: string) => h('li', {}, h('button', { type: 'button', 'data-value': value, 'data-tone': tone }, label));
+    if (this.handle.rename) items.push(item('rename', t('conversation.rename')));
+    if (session) items.push(item('release', t('conversation.release')));
+    else if (this.handle.resume) items.push(item('resume', t('conversation.resume')));
+    if (this.handle.remove) items.push(h('li', {}, h('hr')), item('remove', t('conversation.remove'), 'danger'));
+    if (items.length > 0) {
+      const menu = ds('frontier-menu', {},
+        h('button', { type: 'button', 'data-variant': 'ghost' }, t('conversation.more'), icon('down')),
+        h('menu', {}, ...items),
+      );
+      menu.addEventListener('frontier-select', (event) => {
+        const value = (event as CustomEvent<{ value: string }>).detail?.value;
+        if (value === 'rename') void this.rename();
+        else if (value === 'release') void this.release();
+        else if (value === 'resume') void this.resume();
+        else if (value === 'remove') void this.remove();
+      });
+      controls.push(menu);
     }
     this.controls.replaceChildren(...controls);
+    this.drawChoices();
+  }
+
+  // The runtime, and the model and mode where the agent lets them change, sit in the composer's bar.
+  private drawChoices(): void {
+    const t = this.host.t;
+    const session = this.handle.session();
+    const choices: HTMLElement[] = [ds('frontier-badge', { title: this.handle.meta() }, this.host.runtimeTitle(this.handle.runtimeId))];
+    if (session) {
+      const groups = this.handle.models();
+      if (groups.length > 0) {
+        const current = session.model();
+        const select = h('select', { 'aria-label': t('conversation.model'), 'data-size': 'small' },
+          h('option', { value: '', selected: current === null }, t('conversation.default_model')),
+          ...groups.map((group) => h('optgroup', { label: group.label },
+            ...group.versions.map((version) => h('option', { value: version.id, selected: current?.modelId === version.id }, version.label)))));
+        select.addEventListener('change', async () => {
+          if (select.value === '') return;
+          const answer = await session.setModel({ modelId: select.value });
+          this.reportAction(answer, t('conversation.model_unavailable'));
+        });
+        choices.push(select);
+        const version = groups.flatMap((group) => group.versions).find((entry) => entry.id === current?.modelId);
+        for (const setting of version?.settings ?? []) choices.push(this.settingControl(session, setting, current?.settings ?? {}));
+      } else {
+        const model = session.model();
+        if (model) choices.push(ds('frontier-badge', {}, model.modelId));
+      }
+      const modes = session.modes();
+      if (modes.available.length > 0) {
+        const select = h('select', { 'aria-label': t('conversation.mode'), 'data-size': 'small' },
+          ...modes.available.map((mode) => h('option', { value: mode.id, selected: mode.id === modes.current, title: mode.description ?? undefined }, mode.name)));
+        select.addEventListener('change', async () => {
+          const answer = await session.setMode(select.value);
+          this.reportAction(answer);
+        });
+        choices.push(select);
+      }
+    }
+    this.choices.replaceChildren(...choices);
   }
 
   private settingControl(session: Session, field: Field, values: Record<string, string | number | boolean>): HTMLElement {
     const label = field.label;
     if (field.type !== 'select' || !Array.isArray(field.choices)) return h('span', {});
     const current = values[field.key] ?? field.default ?? '';
-    const select = h('select', { 'aria-label': label },
+    const select = h('select', { 'aria-label': label, 'data-size': 'small' },
       ...(field.choices as readonly { value: string; label?: string }[]).map((choice) => h('option', { value: choice.value, selected: choice.value === current }, choice.label ?? choice.value)));
     select.addEventListener('change', async () => {
       const model = session.model();
@@ -377,7 +437,7 @@ export class Conversation {
       const answer = await session.setModel({ modelId: model.modelId, settings: { ...model.settings, [field.key]: select.value } });
       this.reportAction(answer, this.host.t('conversation.model_unavailable'));
     });
-    return h('label', { class: 'inline' }, label, select);
+    return select;
   }
 
   private reportAction(answer: Result<unknown>, unavailableText?: string): void {
@@ -399,31 +459,32 @@ export class Conversation {
       notices.push({ tone: 'warning', title: t('notice.history_title'), text: this.historyProblem, action: { label: t('notice.try_again'), run: () => { const live = this.handle.session(); if (live) void this.loadHistory(live); } } });
     }
     if (this.actionProblem) notices.push({ tone: 'danger', title: t('notice.action_title'), text: this.actionProblem, action: { label: t('notice.dismiss'), run: () => { this.actionProblem = null; this.drawNotices(); } } });
-    this.notices.replaceChildren(...notices.filter((notice): notice is NonNullable<Notice> => notice !== null).map((notice) => h('div', { class: 'notice', 'data-tone': notice.tone },
+    this.notices.replaceChildren(...notices.filter((notice): notice is NonNullable<Notice> => notice !== null).map((notice) => h('div', { role: notice.tone === 'danger' ? 'alert' : 'status', 'data-tone': notice.tone },
       h('p', {}, h('strong', {}, notice.title), notice.text),
-      notice.action ? h('button', { type: 'button', onclick: notice.action.run }, notice.action.label) : null,
+      notice.action ? h('button', { type: 'button', 'data-size': 'small', onclick: notice.action.run }, notice.action.label) : null,
     )));
   }
 
   private drawComposer(): void {
     const t = this.host.t;
     const session = this.handle.session();
+    this.badges.replaceChildren(stateBadge(stateOf(session, this.handle.record, t)), this.metaElement);
     const turn = session?.currentTurn() ?? null;
     window.clearInterval(this.ticker);
     const statusParts: (HTMLElement | string)[] = [];
     if (turn && turn.startedAt !== null) {
       const startedAt = turn.startedAt;
-      const label = h('span', { class: 'state', 'data-state': 'running' }, t('turn.running', { time: clock(Date.now() - startedAt) }));
+      const label = ds('frontier-badge', { 'data-tone': 'success', 'data-state': 'running' }, t('turn.running', { time: clock(Date.now() - startedAt) }));
       this.ticker = window.setInterval(() => (label.textContent = t('turn.running', { time: clock(Date.now() - startedAt) })), 1000);
       statusParts.push(label);
     } else if (turn) {
-      statusParts.push(h('span', { class: 'state', 'data-state': 'queued' }, t('turn.waiting')));
+      statusParts.push(ds('frontier-badge', { 'data-tone': 'warning' }, t('turn.waiting')));
     } else if (this.lastFinished) {
       statusParts.push(this.lastFinished.error ? t('turn.failed_because', { error: this.lastFinished.error }) : stopReasonText(this.lastFinished.stopReason, this.host));
     }
     if (this.queued) {
       const queued = this.queued;
-      statusParts.push(h('span', { class: 'state', 'data-state': 'queued', title: queued.text }, t('turn.queued')));
+      statusParts.push(ds('frontier-badge', { 'data-tone': 'warning', title: queued.text }, t('turn.queued')));
       statusParts.push(h('button', { type: 'button', 'data-variant': 'ghost', 'data-size': 'small', onclick: async () => {
         const live = this.handle.session();
         if (!live) return;
@@ -441,7 +502,8 @@ export class Conversation {
     const inactive = session !== null && !session.isActive();
     this.sendButton.disabled = this.sending || inactive;
     this.sendButton.setAttribute('aria-busy', String(this.sending));
-    this.sendButton.textContent = turn ? t('composer.queue') : t('composer.send');
+    this.sendButton.setAttribute('aria-label', turn ? t('composer.queue') : t('composer.send'));
+    this.sendButton.title = turn ? t('composer.queue') : t('composer.send');
     this.hint.textContent = inactive
       ? t('composer.inactive_hint')
       : session && !this.handle.session()?.promptCapabilities().image && this.attachments.some((file) => file.type.startsWith('image/'))
@@ -452,7 +514,7 @@ export class Conversation {
       h('button', { type: 'button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': t('composer.remove_attachment', { name: file.name }), onclick: () => {
         this.attachments.splice(index, 1);
         this.drawComposer();
-      } }, '×'),
+      } }, icon('delete')),
     )));
     this.drawTyping();
   }

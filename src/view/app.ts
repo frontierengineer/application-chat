@@ -9,15 +9,13 @@ import type {
 import { type ChatPrompt, type ChatRecord, type PromptChatOutput, applicationId, chatKey, openKey } from '../shared.ts';
 import { failure, text } from '../text.ts';
 import { type ChatHandle, Conversation, type ConversationHost } from './conversation.ts';
-import { h, icon, style } from './dom.ts';
+import { ds, h, icon, style } from './dom.ts';
 import { ago } from './format.ts';
 import { NewChatForm, type NewChatDefaults } from './new-chat.ts';
-import { css, fallbackCss } from './styles.ts';
+import { css } from './styles.ts';
 
 export type Layout = 'desktop' | 'panel';
 type Selection = { kind: 'chat'; id: string } | { kind: 'session'; id: string } | { kind: 'new' } | null;
-
-const chatIcon = 'M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z';
 
 export class ChatApp {
   private readonly context: DesktopContext | PanelContext;
@@ -32,10 +30,11 @@ export class ChatApp {
   private form: NewChatForm | null = null;
   private loaded = false;
   private redrawQueued = false;
-  private readonly list = h('nav', { class: 'chat-list' });
+  private readonly list = h('div', { class: 'chat-list' });
   private readonly sidebar: HTMLElement;
   private readonly root: HTMLElement;
-  private readonly mainSlot = h('div', { class: 'main' });
+  private readonly pending = new Map<string, string>();
+  private runtimesAsked = 0;
   private drafts: Record<string, string>;
   private draftTimer = 0;
 
@@ -50,15 +49,23 @@ export class ChatApp {
       this.drawList();
     });
     this.list.setAttribute('aria-label', t('list.label'));
-    this.sidebar = h('aside', { class: 'sidebar', 'aria-label': t('list.label') },
-      h('header', {},
-        h('h1', {}, t('list.heading')),
-        h('button', { type: 'button', 'data-variant': 'primary', title: t('list.new_help'), onclick: () => this.select({ kind: 'new' }) }, t('list.new')),
+    const width = context.surfacePreferences.get<number | null>('listWidth', null);
+    this.sidebar = h('nav', { class: 'list-pane', 'aria-label': t('list.label'), 'data-size': width ? `${width}px` : '300px', 'data-min': '220px', 'data-max': '480px' },
+      ds('frontier-stack', { fill: true, gap: '0' },
+        ds('frontier-row', { padding: '3' },
+          h('h1', {}, t('list.heading')),
+          ds('frontier-spacer'),
+          h('button', { type: 'button', 'data-variant': 'primary', 'data-size': 'small', title: t('list.new_help'), onclick: () => this.select({ kind: 'new' }) }, icon('plus'), t('list.new')),
+        ),
+        ds('frontier-row', { padding: '3', style: 'padding-block-start: 0' }, search),
+        ds('frontier-scroll', {}, ds('frontier-stack', { padding: '2', gap: '1' }, this.list)),
       ),
-      h('div', { class: 'search' }, search),
-      this.list,
     );
-    this.root = h('div', { class: `chat ${layout}` });
+    this.root = layout === 'desktop' ? ds('frontier-split', { class: 'chat desktop' }) : h('div', { class: 'chat panel' });
+    this.root.addEventListener('frontier-resize', (event) => {
+      const size = (event as CustomEvent<{ size: number }>).detail?.size;
+      if (typeof size === 'number' && size > 0) context.surfacePreferences.set('listWidth', Math.round(size));
+    });
     const saved = context.surfacePreferences.get<Selection>('selection', null);
     this.selection = saved;
   }
@@ -71,9 +78,8 @@ export class ChatApp {
 
   async start(): Promise<void> {
     document.documentElement.lang = this.language;
-    const designSystem = getComputedStyle(document.documentElement).getPropertyValue('--frontier-color-text').trim() !== '';
-    document.body.append(style(css), ...(designSystem ? [] : [style(fallbackCss)]), this.root);
-    this.root.append(h('div', { class: 'empty' }, h('p', {}, this.t('app.loading'))));
+    document.body.append(style(css), this.root);
+    this.root.append(h('p', { role: 'status', 'aria-busy': 'true' }, this.t('app.loading')));
     document.addEventListener('keydown', (event) => {
       if (event.altKey && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === 'n') {
         event.preventDefault();
@@ -140,6 +146,7 @@ export class ChatApp {
   }
 
   private async reloadRuntimes(): Promise<void> {
+    this.runtimesAsked = Date.now();
     const runtimes = await this.context.runtimes.list();
     if (runtimes.ok) this.runtimes = runtimes.value;
     this.queueRedraw();
@@ -188,20 +195,22 @@ export class ChatApp {
   }
 
   private runtimeTitle(id: string): string {
-    return this.runtimes.find((runtime) => runtime.id === id)?.title ?? this.t('app.unknown_runtime');
+    const runtime = this.runtimes.find((entry) => entry.id === id);
+    if (runtime) return runtime.title;
+    // A runtime offered after this view loaded its list: ask again, at most every ten seconds.
+    if (Date.now() - this.runtimesAsked > 10_000) {
+      this.runtimesAsked = Date.now();
+      void this.reloadRuntimes();
+    }
+    return this.t('app.unknown_runtime');
   }
 
   private workerTitle(id: string): string {
     return this.workers.find((worker) => worker.id === id)?.title() ?? this.t('app.unknown_worker');
   }
 
-  private stateOf(session: Session | null, chat: ChatRecord | null): { state: string; label: string } {
-    if (!session) return chat?.releasedAt ? { state: 'released', label: this.t('state.released') } : { state: 'released', label: this.t('state.ended') };
-    if (!session.isActive()) return { state: 'inactive', label: this.t('state.inactive') };
-    const turn = session.currentTurn();
-    if (turn && turn.startedAt !== null) return { state: 'running', label: this.t('state.running') };
-    if (turn) return { state: 'queued', label: this.t('state.queued') };
-    return { state: 'idle', label: this.t('state.idle') };
+  private stateOf(session: Session | null, chat: ChatRecord | null): State {
+    return stateOf(session, chat, this.t);
   }
 
   private drawList(): void {
@@ -211,11 +220,11 @@ export class ChatApp {
     const chats = this.sortedChats().filter((chat) => matches(`${chat.title} ${this.runtimeTitle(chat.runtimeId)} ${chat.workspace?.title ?? ''}`));
     const chatSessions = new Set([...this.chats.values()].map((chat) => chat.sessionId).filter(Boolean));
     const others = [...this.sessions.values()].filter((session) => !chatSessions.has(session.id) && session.visibility === 'public' && matches(this.runtimeTitle(session.runtimeId)));
-    const entry = (selection: Selection, title: string, meta: string, state: { state: string; label: string }) => {
+    const entry = (selection: Selection, title: string, meta: string, state: State) => {
       const current = JSON.stringify(selection) === JSON.stringify(this.selection);
       return h('li', {}, h('button', { type: 'button', class: 'entry', 'aria-current': current ? 'true' : undefined, onclick: () => this.select(selection) },
         h('span', { class: 'entry-title' }, title),
-        h('span', { class: 'state', 'data-state': state.state }, state.label),
+        stateBadge(state),
         h('span', { class: 'entry-meta' }, meta),
       ));
     };
@@ -224,7 +233,7 @@ export class ChatApp {
       children.push(h('p', { class: 'list-empty' }, this.filter === '' ? t('list.empty') : t('list.no_match')));
     }
     if (chats.length > 0) {
-      children.push(h('ul', { role: 'list', style: 'list-style:none;margin:0;padding:0' }, ...chats.map((chat) => {
+      children.push(h('ul', { role: 'list' }, ...chats.map((chat) => {
         const session = chat.sessionId ? this.sessions.get(chat.sessionId) ?? null : null;
         const meta = [this.runtimeTitle(chat.runtimeId), chat.workspace?.title, ago(chat.lastPromptAt ?? chat.createdAt, now, this.language)].filter(Boolean).join(' · ');
         return entry({ kind: 'chat', id: chat.id }, chat.title, meta, this.stateOf(session, chat));
@@ -232,7 +241,7 @@ export class ChatApp {
     }
     if (others.length > 0) {
       children.push(h('h2', {}, t('list.other_sessions')));
-      children.push(h('ul', { role: 'list', style: 'list-style:none;margin:0;padding:0' }, ...others.map((session) =>
+      children.push(h('ul', { role: 'list' }, ...others.map((session) =>
         entry({ kind: 'session', id: session.id }, t('list.session_title', { runtime: this.runtimeTitle(session.runtimeId) }),
           [this.workerTitle(session.workerId), ago(session.createdAt, now, this.language)].join(' · '), this.stateOf(session, null)))));
     }
@@ -246,6 +255,9 @@ export class ChatApp {
       layout: this.layout,
       copy: async (value) => (await this.context.clipboard.copy(value)).ok,
       back: () => this.select(null),
+      pending: (key) => this.pending.get(key) ?? null,
+      settled: (key) => void this.pending.delete(key),
+      runtimeTitle: (id) => this.runtimeTitle(id),
       draft: (key) => this.drafts[key] ?? '',
       saveDraft: (key, value) => {
         if (value === '') delete this.drafts[key];
@@ -375,7 +387,13 @@ export class ChatApp {
         layout: this.layout,
         defaults,
         saveDefaults: (value) => this.context.surfacePreferences.set('defaults', value),
-        created: (chatId) => {
+        runtimesListed: (runtimes) => {
+          this.runtimes = runtimes;
+          this.runtimesAsked = Date.now();
+          this.queueRedraw();
+        },
+        created: (chatId, prompt) => {
+          this.pending.set(`chat:${chatId}`, prompt);
           void this.reloadChat(chatKey(chatId), 'written', false).then(async () => {
             await this.loadSessions();
             this.select({ kind: 'chat', id: chatId });
@@ -385,18 +403,36 @@ export class ChatApp {
       });
       main = this.form.element;
     } else {
-      main = h('section', { class: 'main' }, h('div', { class: 'empty' },
-        icon(chatIcon),
+      main = h('main', { class: 'main' }, ds('frontier-stack', { fill: true, justify: 'center' }, ds('frontier-empty', {},
+        icon('chat'),
         h('h2', {}, this.t('app.empty_heading')),
         h('p', {}, this.t('app.empty')),
-        h('button', { type: 'button', 'data-variant': 'primary', onclick: () => this.select({ kind: 'new' }) }, this.t('list.new')),
-      ));
+        h('button', { type: 'button', 'data-variant': 'primary', onclick: () => this.select({ kind: 'new' }) }, icon('plus'), this.t('list.new')),
+      )));
     }
+    main.setAttribute('data-min', '360px');
     if (this.layout === 'panel') this.root.replaceChildren(this.selection === null ? this.sidebar : main);
-    else this.root.replaceChildren(this.sidebar, main);
+    else this.root.replaceChildren(this.sidebar, h('hr'), main);
   }
 }
 
 export function mountChat(context: DesktopContext | PanelContext, layout: Layout): Promise<void> {
   return new ChatApp(context, layout).start();
+}
+
+export type State = { state: 'running' | 'queued' | 'idle' | 'inactive' | 'released'; label: string };
+
+export function stateOf(session: Session | null, chat: ChatRecord | null, t: (token: string) => string): State {
+  if (!session) return chat?.releasedAt ? { state: 'released', label: t('state.released') } : { state: 'released', label: t('state.ended') };
+  if (!session.isActive()) return { state: 'inactive', label: t('state.inactive') };
+  const turn = session.currentTurn();
+  if (turn && turn.startedAt !== null) return { state: 'running', label: t('state.running') };
+  if (turn) return { state: 'queued', label: t('state.queued') };
+  return { state: 'idle', label: t('state.idle') };
+}
+
+const tones: Record<State['state'], string> = { running: 'success', queued: 'warning', inactive: 'warning', idle: 'muted', released: 'muted' };
+
+export function stateBadge(state: State): HTMLElement {
+  return ds('frontier-badge', { 'data-tone': tones[state.state], 'data-state': state.state }, state.label);
 }

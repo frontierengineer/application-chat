@@ -1,5 +1,5 @@
 import type { AttachmentPart, ToolContentPart, ToolKind } from '../../../application';
-import { fill, h } from './dom.ts';
+import { ds, fill, h, icon } from './dom.ts';
 import { bytes, tokens } from './format.ts';
 import { renderMarkdown } from './markdown.ts';
 import { type Item, trimDiff } from './transcript-model.ts';
@@ -10,17 +10,11 @@ export interface RenderEnvironment {
   copy(text: string): Promise<boolean>;
 }
 
-const glyphs: Record<ToolKind, string> = {
-  read: '◱',
-  edit: '✎',
-  delete: '⌫',
-  move: '⇄',
-  search: '⌕',
-  execute: '›_',
-  think: '◌',
-  fetch: '↓',
-  switch_mode: '↻',
-  other: '•',
+const toolTones: Record<string, string> = { completed: 'success', failed: 'danger', in_progress: 'accent', pending: 'muted' };
+const planTones: Record<string, string> = { completed: 'muted', in_progress: 'accent', pending: 'muted' };
+
+const toolIcons: Record<ToolKind, 'read' | 'edit' | 'delete' | 'move' | 'search' | 'execute' | 'think' | 'fetch' | 'switch_mode' | 'other'> = {
+  read: 'read', edit: 'edit', delete: 'delete', move: 'move', search: 'search', execute: 'execute', think: 'think', fetch: 'fetch', switch_mode: 'switch_mode', other: 'other',
 };
 
 function blobUrl(data: Uint8Array, mimeType: string): string {
@@ -83,7 +77,7 @@ function contentPart(part: ToolContentPart, environment: RenderEnvironment): HTM
 
 function addCopyButtons(container: HTMLElement, environment: RenderEnvironment): void {
   for (const pre of container.querySelectorAll('pre')) {
-    const button = h('button', { type: 'button', class: 'copy', 'data-size': 'small' }, environment.t('transcript.copy_code'));
+    const button = h('button', { type: 'button', class: 'copy', 'data-size': 'small', 'data-variant': 'ghost' }, environment.t('transcript.copy_code'));
     button.addEventListener('click', async () => {
       const copied = await environment.copy(pre.querySelector('code')?.textContent ?? pre.textContent ?? '');
       button.textContent = environment.t(copied ? 'transcript.copied' : 'transcript.copy_failed');
@@ -111,7 +105,7 @@ export function stopReasonText(reason: string | null, environment: RenderEnviron
 export function renderItem(item: Item, environment: RenderEnvironment, existing?: HTMLElement): HTMLElement {
   switch (item.kind) {
     case 'user': {
-      const element = existing ?? h('div', { class: 'message-user' });
+      const element = existing ?? h('div', { class: 'you' });
       fill(element,
         h('span', { class: 'visually-hidden' }, environment.t('transcript.you_said')),
         item.text,
@@ -120,7 +114,7 @@ export function renderItem(item: Item, environment: RenderEnvironment, existing?
       return element;
     }
     case 'text': {
-      const element = existing ?? h('div', { class: 'message-agent' });
+      const element = existing ?? h('div', { class: 'agent' });
       if (item.text === '' && item.partial) {
         element.replaceChildren(typing(environment.t('transcript.responding')));
       } else {
@@ -131,20 +125,21 @@ export function renderItem(item: Item, environment: RenderEnvironment, existing?
       return element;
     }
     case 'thinking': {
-      const element = (existing as HTMLDetailsElement | undefined) ?? h('details', { class: 'thinking' }, h('summary', {}), h('div', { class: 'body' }));
+      const element = (existing as HTMLDetailsElement | undefined) ?? h('details', { class: 'block thinking' }, h('summary', {}), h('div', { class: 'body' }));
       const summary = element.querySelector('summary')!;
-      summary.replaceChildren(item.partial ? typing(environment.t('transcript.thinking')) : environment.t('transcript.thought'), item.partial ? environment.t('transcript.thinking') : '');
+      summary.replaceChildren(icon('think'), h('span', { class: 'name' }, item.partial ? environment.t('transcript.thinking') : environment.t('transcript.thought')), item.partial ? typing(environment.t('transcript.thinking')) : '');
       element.querySelector('.body')!.textContent = item.text;
       return element;
     }
     case 'tool': {
-      const element = (existing as HTMLDetailsElement | undefined) ?? h('details', { class: 'tool' }, h('summary', {}), h('div', { class: 'body' }));
+      const element = (existing as HTMLDetailsElement | undefined) ?? h('details', { class: 'block tool' }, h('summary', {}), h('div', { class: 'body' }));
       const statusText = environment.t(`tool.${item.status}`);
+      const kind = (item.toolKind in toolIcons ? item.toolKind : 'other') as ToolKind;
       element.querySelector('summary')!.replaceChildren(
-        h('span', { class: 'glyph', 'aria-hidden': 'true' }, glyphs[item.toolKind] ?? '•'),
+        icon(toolIcons[kind]),
         h('span', { class: 'name' }, item.name),
         h('span', { class: 'summary-input' }, item.locations[0]?.path ?? summaryOf(item.input)),
-        h('span', { class: 'tool-state', 'data-status': item.status }, statusText),
+        ds('frontier-badge', { 'data-tone': toolTones[item.status] ?? 'muted', 'data-status': item.status }, statusText, item.result && !item.result.isError ? ` · ${(item.result.durationMilliseconds / 1000).toFixed(1)} s` : ''),
       );
       const body = element.querySelector('.body')!;
       const parts: (HTMLElement | null)[] = [];
@@ -178,8 +173,8 @@ export function renderItem(item: Item, environment: RenderEnvironment, existing?
       element.replaceChildren(
         h('h3', {}, environment.t('transcript.plan')),
         h('ol', {}, ...item.entries.map((entry) => h('li', { 'data-status': entry.status },
-          entry.content,
-          h('span', { class: 'priority' }, environment.t(`plan.${entry.status}`)),
+          h('span', {}, entry.content),
+          ds('frontier-badge', { 'data-tone': planTones[entry.status] ?? 'muted' }, environment.t(`plan.${entry.status}`)),
         ))),
       );
       return element;
@@ -190,7 +185,7 @@ export function renderItem(item: Item, environment: RenderEnvironment, existing?
       return element;
     }
     case 'error': {
-      const element = existing ?? h('div', { class: 'event-error', role: 'alert' });
+      const element = existing ?? h('div', { class: 'event-error', role: 'alert', 'data-tone': item.recoverable ? 'warning' : 'danger' });
       element.replaceChildren(h('strong', {}, environment.t(item.recoverable ? 'transcript.error_recoverable' : 'transcript.error')), h('p', {}, item.message));
       return element;
     }

@@ -9,16 +9,18 @@ const frontier = process.env.FRONTIER_REPO || join(root, '..', '..', 'frontier')
 const playwrightEntry = join(frontier, 'node_modules', 'playwright', 'index.mjs');
 const esbuildEntry = join(frontier, 'node_modules', 'esbuild', 'lib', 'main.js');
 const shots = process.env.CHAT_SCREENSHOTS ?? '';
-const available = existsSync(playwrightEntry) && existsSync(esbuildEntry);
+const designSystemEntry = join(frontier, 'modules', 'typescript', 'design_system', 'provider.ts');
+const available = existsSync(playwrightEntry) && existsSync(esbuildEntry) && existsSync(designSystemEntry);
 
 type Page = {
   setContent(html: string): Promise<void>;
-  addScriptTag(options: { content: string }): Promise<unknown>;
+  addScriptTag(options: { content: string; type?: string }): Promise<unknown>;
+  waitForFunction(code: string): Promise<unknown>;
   evaluate<T>(code: string | ((...args: never[]) => T), ...args: unknown[]): Promise<T>;
   getByRole(role: string, options?: Record<string, unknown>): Locator;
   getByText(text: string | RegExp, options?: Record<string, unknown>): Locator;
   getByLabel(text: string | RegExp, options?: Record<string, unknown>): Locator;
-  locator(selector: string): Locator;
+  locator(selector: string, options?: { hasText?: string }): Locator;
   keyboard: { press(key: string): Promise<void> };
   screenshot(options: { path: string; fullPage?: boolean }): Promise<unknown>;
   setViewportSize(size: { width: number; height: number }): Promise<void>;
@@ -42,11 +44,17 @@ type Locator = {
 
 let browser: { newPage(options?: Record<string, unknown>): Promise<Page>; close(): Promise<void> } | null = null;
 let bundle = '';
+let designSystem = '';
 
 before(async () => {
-  if (!available) return;
+  assert.ok(available, `the browser tests need Playwright, esbuild and the Design System from a Frontier checkout at ${frontier}; set FRONTIER_REPO`);
   const { buildSync } = (await import(esbuildEntry)) as { buildSync: (options: Record<string, unknown>) => { outputFiles: { text: string }[] } };
   bundle = buildSync({ entryPoints: [join(root, 'test', 'view', 'page.ts')], bundle: true, format: 'iife', platform: 'browser', target: 'chrome120', write: false, absWorkingDir: root }).outputFiles[0]!.text;
+  // The view frame's Design System, as Frontier gives it: its stylesheet and its Behaviors, from the checkout.
+  designSystem = buildSync({
+    stdin: { contents: `import { designSystemProvider } from ${JSON.stringify(designSystemEntry)};\nconst system = await designSystemProvider.provide({});\nconst style = document.createElement('style');\nstyle.textContent = system.stylesheet;\ndocument.head.append(style);\nsystem.installBehaviors(window);`, resolveDir: frontier, loader: 'ts' },
+    bundle: true, format: 'esm', platform: 'browser', target: 'chrome120', write: false, absWorkingDir: frontier,
+  }).outputFiles[0]!.text;
   const { chromium } = (await import(playwrightEntry)) as { chromium: { launch(): Promise<typeof browser> } };
   browser = await chromium.launch();
   if (shots) mkdirSync(shots, { recursive: true });
@@ -58,7 +66,9 @@ after(async () => {
 
 async function open(layout: 'desktop' | 'panel', size = { width: 1180, height: 760 }): Promise<Page> {
   const page = await browser!.newPage({ viewport: size, colorScheme: 'light' });
-  await page.setContent('<!doctype html><html><head><meta charset="utf-8"></head><body></body></html>');
+  await page.setContent('<!doctype html><html data-mode="light"><head><meta charset="utf-8"></head><body></body></html>');
+  await page.addScriptTag({ content: designSystem, type: 'module' });
+  await page.waitForFunction('customElements.get("frontier-split") !== undefined');
   await page.addScriptTag({ content: bundle });
   await page.evaluate(`window.mountView(${JSON.stringify(layout)})`);
   return page;
@@ -76,7 +86,7 @@ async function eventually(check: () => Promise<boolean>, what: string): Promise<
   assert.fail(`timed out waiting for ${what}`);
 }
 
-test('a first chat starts from one prompt, streams its turn, queues, cancels, switches mode and model, attaches, releases and resumes', { skip: available ? false : 'Playwright or esbuild is not in the Frontier checkout' }, async () => {
+test('a first chat starts from one prompt, streams its turn, queues, cancels, switches mode and model, attaches, releases and resumes', {}, async () => {
   const page = await open('desktop');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   assert.match((await page.locator('.summary-text').textContent()) ?? '', /^Claude Code on Laptop · Agent's default · No workspace$/);
@@ -84,14 +94,15 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
 
   await page.getByLabel('Prompt', { exact: true }).fill('Fix the flaky login test');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
-  await page.locator('.message-user').first().waitFor();
+  await page.locator('.you').first().waitFor();
+  assert.equal(await page.locator('.you').first().textContent(), 'You said:Fix the flaky login test', 'the first prompt shows at once, while the agent cannot yet replay');
   const created = await page.evaluate<{ method: string; input: Record<string, unknown> }[]>('window.install.calls');
   assert.equal(created[0]?.method, 'create-chat');
   assert.equal(created[0]?.input.runtimeId, 'github.com/frontierengineer/claude-code');
   assert.equal(created[0]?.input.workerId, 'w1');
   assert.equal(await page.locator('.chat-list .entry-title').first().textContent(), 'Fix the flaky login test');
   await eventually(async () => ((await page.locator('.composer .status').textContent()) ?? '').startsWith('Running'), 'the running clock');
-  assert.equal(await page.locator('.chat-list .state').first().textContent(), 'Running');
+  assert.equal(await page.locator('.chat-list frontier-badge').first().textContent(), 'Running');
 
   await page.evaluate("window.stream('The login test raced the redirect. I made it **wait** for the home page before it checks the user.')");
   await page.getByText('raced the redirect', { exact: false }).waitFor();
@@ -108,6 +119,8 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByText('Prompt queued').waitFor();
   await page.evaluate('window.finish()');
   await page.getByText('Also run the whole suite').waitFor();
+  assert.equal(await page.getByText('Only the live conversation shows').count(), 0, 'history asked for during a turn is asked for again, not taken as no replay');
+  await eventually(async () => (await page.locator('.you', { hasText: 'Fix the flaky login test' }).count()) === 1 && (await page.locator('.you').count()) === 2, 'the shown prompt to give way to the transcript\'s own turn, once');
   await eventually(async () => !(await page.getByText('Prompt queued').isVisible()), 'the queued prompt to start');
   await eventually(async () => ((await page.locator('.composer .status').textContent()) ?? '').startsWith('Running'), 'the second turn to run');
 
@@ -127,15 +140,16 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await eventually(async () => (await page.evaluate<number>("window.install.sessionMap.get('session-1').prompts.length")) === 3, 'the prompt with an image');
   const kinds = await page.evaluate<string[]>("window.install.sessionMap.get('session-1').prompts[2].map((part) => part.type)");
   assert.deepEqual(kinds, ['text', 'image']);
-  await page.locator('.message-user .attachment img').first().waitFor();
+  await page.locator('.you .attachment img').first().waitFor();
 
   await page.evaluate('window.finish()');
-  await page.getByRole('button', { name: 'Release', exact: true }).click();
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('menuitem', { name: 'Release', exact: true }).click();
   await page.getByText('Its agent is stopped and its workspace slot is free.', { exact: false }).waitFor();
-  assert.equal(await page.locator('.chat-list .state').first().textContent(), 'Released');
+  assert.equal(await page.locator('.chat-list frontier-badge').first().textContent(), 'Released');
   await page.getByLabel('Prompt', { exact: true }).fill('Carry on where you stopped');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
-  await eventually(async () => (await page.locator('.chat-list .state').first().textContent()) === 'Running', 'the chat to resume');
+  await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the chat to resume');
   const options = await page.evaluate<{ agentSessionId?: string }[]>('window.install.createOptions');
   assert.equal(options[1]?.agentSessionId, 'agent-session-1');
   await page.evaluate("window.stream('Resumed, and the suite passes.')");
@@ -145,7 +159,7 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.close();
 });
 
-test('the new chat form says why a runtime is not ready, and starts a chat in a new workspace', { skip: available ? false : 'Playwright or esbuild is not in the Frontier checkout' }, async () => {
+test('the new chat form says why a runtime is not ready, and starts a chat in a new workspace', {}, async () => {
   const page = await open('desktop');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByText('Options').click();
@@ -159,7 +173,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.getByLabel('Name', { exact: true }).fill('fix-login');
   await page.getByLabel('Prompt', { exact: true }).fill('Start on the login fix');
   await page.getByRole('button', { name: 'Start chat' }).click();
-  await page.locator('.message-user').first().waitFor();
+  await page.locator('.you').first().waitFor();
   const calls = await page.evaluate<{ input: Record<string, unknown> }[]>('window.install.calls');
   assert.deepEqual(calls[0]?.input.workspace, { workspaceProvisionerId: 'git-1', name: 'fix-login' });
   assert.equal(calls[0]?.input.runtimeId, 'github.com/frontierengineer/opencode');
@@ -167,14 +181,14 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.close();
 });
 
-test('the panel shows the list or one chat at a time, with a way back', { skip: available ? false : 'Playwright or esbuild is not in the Frontier checkout' }, async () => {
+test('the panel shows the list or one chat at a time, with a way back', {}, async () => {
   const page = await open('panel', { width: 390, height: 780 });
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
   assert.equal(await page.getByText('No chats yet. Start one, and it shows here.').isVisible(), true);
   await page.getByRole('button', { name: 'New chat' }).click();
   await page.getByLabel('Prompt', { exact: true }).fill('Check on the nightly build');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
-  await page.locator('.message-user').first().waitFor();
+  await page.locator('.you').first().waitFor();
   await page.evaluate("window.stream('The nightly build is green.')");
   await page.getByText('The nightly build is green.').waitFor();
   await shot(page, 'panel-chat');
