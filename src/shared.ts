@@ -1,6 +1,6 @@
 import type { PromptContentPart, RuntimeModelSelection } from '../../application';
 
-export const applicationId = 'github.com/frontierengineer/chat';
+export const applicationId = 'github.com/frontierengineer/application-chat';
 
 export interface ChatWorkspace {
   workspaceId: string;

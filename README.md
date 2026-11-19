@@ -7,7 +7,7 @@ Applications, written against Frontier's Application Interface
 ## What it does
 
 Chat contributes a **desktop** and a **panel**: on a workstation, the list of
-chats beside the open one; on a phone or tablet, the list or one chat at a time.
+chats beside the open one; on a handheld panel, the list or one chat at a time.
 
 - **Starting a chat** takes one prompt. Chat picks a runtime that is ready on a
   connected worker, remembering the last choice on each surface. Options choose

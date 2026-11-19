@@ -280,7 +280,7 @@ export class FakeInstall {
     const install = this;
     const ok = <T>(value: T): Result<T> => ({ ok: true, value });
     return {
-      applicationId: 'github.com/frontierengineer/chat',
+      applicationId: 'github.com/frontierengineer/application-chat',
       translate: (token: string) => translations[token] ?? token,
       store: this.store,
       logger: { debug: async () => {}, info: async () => {}, warn: async () => {}, error: async () => {} },

@@ -1,5 +1,5 @@
 {
-  "id": "github.com/frontierengineer/chat",
+  "id": "github.com/frontierengineer/application-chat",
   "title": "Chat",
   "color": "#6c5ce7",
   "description": "Talk with agents. Start a chat on any runtime and worker, in a workspace or without one, and follow every turn as it runs.",
@@ -44,7 +44,7 @@
         "title": "Open chat",
         "description": "Opens a chat in Chat.",
         "input": [
-          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
         ]
       },
       {
@@ -52,7 +52,7 @@
         "title": "Send to a chat",
         "description": "Sends a prompt to a chat's agent, resuming the chat first if it was released. The prompt waits its turn while the agent is busy.",
         "input": [
-          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." },
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." },
           { "type": "text", "key": "prompt", "label": "Prompt", "required": true }
         ]
       },
@@ -61,7 +61,7 @@
         "title": "Release chat",
         "description": "Stops a chat's agent and frees its workspace slot. The conversation is kept, and the next prompt resumes it.",
         "input": [
-          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
+          { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
         ]
       }
     ],

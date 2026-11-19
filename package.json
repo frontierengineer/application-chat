@@ -1,8 +1,12 @@
 {
-  "name": "frontier-chat",
+  "name": "application-chat",
   "private": true,
   "type": "module",
   "license": "MIT",
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node scripts/check.mjs"
+  },
   "dependencies": {
     "marked": "18.2.1"
   }
