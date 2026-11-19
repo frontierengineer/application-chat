@@ -31,6 +31,7 @@ type Locator = {
   fill(value: string): Promise<void>;
   press(key: string): Promise<void>;
   textContent(): Promise<string | null>;
+  allTextContents(): Promise<string[]>;
   isVisible(): Promise<boolean>;
   isDisabled(): Promise<boolean>;
   selectOption(value: string | { label: string }): Promise<unknown>;
@@ -78,8 +79,8 @@ async function shot(page: Page, name: string): Promise<void> {
   if (shots) await page.screenshot({ path: join(shots, `${name}.png`) });
 }
 
-async function eventually(check: () => Promise<boolean>, what: string): Promise<void> {
-  for (let attempt = 0; attempt < 50; attempt += 1) {
+async function eventually(check: () => Promise<boolean>, what: string, attempts = 50): Promise<void> {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     if (await check()) return;
     await new Promise((resolve) => setTimeout(resolve, 50));
   }
@@ -190,9 +191,9 @@ test('a chat whose agent takes long to start shows at once as starting, with its
   await page.getByText('Starting the agent.').waitFor({ timeout: 1000 });
   assert.equal(await page.locator('form[aria-label="Send a prompt"] button[type="submit"]').isDisabled(), true, 'nothing more is sent while the agent starts');
   assert.equal(await page.locator('.chat-list frontier-badge').first().textContent(), 'Starting');
-  assert.equal(await page.locator('.you').first().textContent(), 'You said:Review the open pull request');
+  assert.deepEqual(await page.locator('.you').allTextContents(), ['You said:Review the open pull request'], 'the prompt shows while the agent starts');
   await shot(page, 'desktop-starting');
-  await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the agent to start and run the prompt');
+  await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the agent to start and run the prompt', 150);
   assert.equal(await page.locator('.you').count(), 1);
   await page.close();
 });

@@ -56,7 +56,8 @@ export class Conversation {
   private readonly dirty = new Set<Item>();
   private frame = 0;
   private subscriptions: Subscription[] = [];
-  private boundSessionId: string | null = null;
+  // undefined until the first bind, so a chat with no session yet is drawn too.
+  private boundSessionId: string | null | undefined = undefined;
   private replayUnavailable = false;
   // History answered unavailable once; a second answer with no turn running means the agent cannot replay.
   private replayDoubted = false;
