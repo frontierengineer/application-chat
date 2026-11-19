@@ -258,7 +258,8 @@ export class NewChatForm {
         const target = input as HTMLInputElement | HTMLSelectElement;
         this.settings[setting.key] = target instanceof HTMLInputElement && target.type === 'checkbox' ? target.checked : target instanceof HTMLInputElement && target.type === 'number' ? Number(target.value) : target.value;
       });
-      return field(setting.label, input, setting.description ?? null);
+      // A Runtime's own words about its setting are not shown: the label names it.
+      return field(setting.label, input);
     });
     this.definition.replaceChildren(
       h('option', { value: '' }, t('new.default_definition')),

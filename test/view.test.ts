@@ -65,12 +65,13 @@ after(async () => {
   await browser?.close();
 });
 
-async function open(layout: 'desktop' | 'panel', size = { width: 1180, height: 760 }): Promise<Page> {
+async function open(layout: 'desktop' | 'panel', size = { width: 1180, height: 760 }, setup = ''): Promise<Page> {
   const page = await browser!.newPage({ viewport: size, colorScheme: 'light' });
   await page.setContent('<!doctype html><html data-mode="light"><head><meta charset="utf-8"></head><body></body></html>');
   await page.addScriptTag({ content: designSystem, type: 'module' });
   await page.waitForFunction('customElements.get("frontier-split") !== undefined');
   await page.addScriptTag({ content: bundle });
+  if (setup) await page.evaluate(setup);
   await page.evaluate(`window.mountView(${JSON.stringify(layout)})`);
   return page;
 }
@@ -239,5 +240,22 @@ test('the panel shows the list or one chat at a time, with a way back', {}, asyn
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
   assert.equal(await page.locator('.chat-list .entry-title').first().textContent(), 'Check on the nightly build');
   await shot(page, 'panel-list');
+  await page.close();
+});
+
+test('with no runtime installed, the new chat form says so and points to installing one', {}, async () => {
+  const page = await open('desktop', undefined, 'window.install.runtimes.length = 0');
+  await page.getByRole('heading', { name: 'No runtime yet' }).waitFor();
+  await page.getByText('Install an Application that offers one', { exact: false }).waitFor();
+  await page.close();
+});
+
+test('a model setting shows its label, never the runtime\'s own description of it', {}, async () => {
+  const page = await open('desktop');
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.getByText('Options').click();
+  await page.getByLabel('Model', { exact: true }).selectOption('opus');
+  await page.getByLabel('Effort', { exact: true }).waitFor();
+  assert.equal(await page.getByText('reasoning effort', { exact: false }).count(), 0);
   await page.close();
 });
