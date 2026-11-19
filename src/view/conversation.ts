@@ -61,6 +61,7 @@ export class Conversation {
   private replayUnavailable = false;
   // History answered unavailable once; a second answer with no turn running means the agent cannot replay.
   private replayDoubted = false;
+  private wasActive = false;
   private historyProblem: string | null = null;
   private actionProblem: string | null = null;
   private lastFinished: TurnFinishedEvent | null = null;
@@ -191,7 +192,11 @@ export class Conversation {
   update(handle: ChatHandle): void {
     this.handle = handle;
     const session = handle.session();
+    const active = session?.isActive() ?? false;
     if ((session?.id ?? null) !== this.boundSessionId) this.bind(session);
+    // An agent that opens again, as after its worker restarts, can replay what it could not while closed.
+    else if (session && active && !this.wasActive && (this.replayUnavailable || this.historyProblem !== null || this.replayDoubted)) void this.loadHistory(session);
+    this.wasActive = active;
     this.drawHeader();
     this.drawNotices();
     this.drawComposer();
@@ -232,14 +237,14 @@ export class Conversation {
       this.model.reset(history.value);
       this.drawAll();
       this.scrollToEnd();
-    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !this.replayDoubted)) {
+    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !session.isActive() || !this.replayDoubted)) {
       // An agent cannot replay while it runs a turn, and a turn may run that this view has not heard start: what
       // streams in is shown, and history is asked for again when a turn ends or, failing that, in a few seconds.
       this.replayDoubted = true;
       window.clearTimeout(this.reloadTimer);
       this.reloadTimer = window.setTimeout(() => {
         const live = this.handle.session();
-        if (live && live.currentTurn() === null) void this.loadHistory(live);
+        if (live && live.isActive() && live.currentTurn() === null) void this.loadHistory(live);
       }, 5000);
     } else if (history.unavailable) {
       this.replayUnavailable = true;

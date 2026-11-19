@@ -198,6 +198,28 @@ test('a chat whose agent takes long to start shows at once as starting, with its
   await page.close();
 });
 
+test('a chat whose agent is not open shows what it can, and the whole conversation once the agent opens again', {}, async () => {
+  const page = await open('desktop');
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.getByLabel('Prompt', { exact: true }).fill('Summarize the changelog');
+  await page.getByLabel('Prompt', { exact: true }).press('Enter');
+  await page.locator('.you').first().waitFor();
+  await page.evaluate("window.stream('The changelog lists three fixes.')");
+  await page.evaluate('window.finish()');
+  await page.getByText('The changelog lists three fixes.').waitFor();
+  await page.evaluate("(() => { const session = window.install.sessionMap.get('session-1'); session.active = false; session.reason = 'Its worker restarted.'; window.install.changed('session', 'session-1'); })()");
+  await page.getByText('The agent is not running').waitFor();
+  await page.getByRole('button', { name: 'New chat' }).click();
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.locator('.chat-list button.entry').first().click();
+  await new Promise((resolve) => setTimeout(resolve, 6000));
+  assert.equal(await page.getByText('Only the live conversation shows').count(), 0, 'an agent that is not open is not taken as one that cannot replay');
+  await page.evaluate("(() => { const session = window.install.sessionMap.get('session-1'); session.active = true; session.reason = null; window.install.changed('session', 'session-1'); })()");
+  await page.getByText('The changelog lists three fixes.').waitFor({ timeout: 2000 });
+  assert.equal(await page.getByText('Only the live conversation shows').count(), 0);
+  await page.close();
+});
+
 test('the panel shows the list or one chat at a time, with a way back', {}, async () => {
   const page = await open('panel', { width: 390, height: 780 });
   await page.getByRole('heading', { name: 'Chats' }).waitFor();

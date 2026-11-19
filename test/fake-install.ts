@@ -215,6 +215,7 @@ export class FakeSession {
       history: async (): Promise<Result<TranscriptEvent[]>> => {
         if (!this.replay) return { ok: false, unavailable: true, message: 'This runtime cannot replay.' };
         if (this.turn !== null) return { ok: false, unavailable: true, message: 'The agent is running a turn.' };
+        if (!this.active) return { ok: false, unavailable: true, message: 'The agent is not open on its worker.' };
         return { ok: true, value: [...this.history] };
       },
       follow: (handler: Handler<TranscriptEvent>) => this.followers.add(handler),
