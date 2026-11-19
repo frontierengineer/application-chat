@@ -16,14 +16,17 @@ chats beside the open one; on a handheld panel, the list or one chat at a time.
   worker, or a new one from a workspace provisioner there, by name and base.
   When the runtime is not ready on the worker, the form says why, in the
   runtime's own words.
-- **A turn streams** as it runs: the agent's words as rendered Markdown, its
-  thinking, each tool call with its input, files, diffs and result, its plan,
-  mode changes and errors. The composer shows whether the turn is waiting or
-  running, and for how long. When it ends it says why.
+- **A turn streams** as it runs: the prompt as a bubble at the end of the line,
+  the agent's words as rendered Markdown beside it, and its thinking, each tool
+  call (its input, files, diffs and result) and its plan as cards that open.
+  The composer shows whether the turn is waiting or running, and for how long.
+  When it ends it says why. The prompt a chat starts with shows at once, and
+  the whole conversation loads again from the agent when a turn ends.
 - **The next prompt** can be sent while a turn runs. It waits, and a newer one
   replaces it. A queued prompt can be canceled, and a running turn stopped,
   keeping what the agent wrote.
-- **Mode and model** change during a session where the agent allows it.
+- **Runtime, model and mode** sit in the composer's bar; the model and mode
+  change during a session where the agent allows it.
 - **Attachments**: images, audio and files go with a prompt when the agent
   takes them. Text files go inline when it takes no embedded files. Anything
   the agent does not take is named, and nothing is sent.
@@ -66,22 +69,39 @@ source lists the chats for their inputs.
 | `translations.json` | Every word a person reads, by token. |
 | `test/` | Unit tests of the methods and the transcript, and browser tests of the views. |
 
-The views are plain semantic HTML drawn with Frontier's Design System: its
-tokens, its button variants and its tones. Where no Design System is loaded,
-as in the browser tests, a small fallback stylesheet stands in.
+The views are plain semantic HTML and the Design System's `frontier-*`
+elements: the desktop is a `frontier-split` whose list the person drags to
+size, the open chat a stack of a header row, a `frontier-scroll` transcript
+and the composer as a `frontier-card`; states are `frontier-badge`s, empty
+views `frontier-empty`, the chat's actions a `frontier-menu`. Chat's own CSS
+is only the arrangement, all of it in tokens, with the Soft radius: controls
+and list entries take the control radius, bubbles and cards the large one,
+panes and bars stay square, badges and dots round.
 
 ## Checking it
 
 ```sh
 npm ci
-node scripts/check.mjs
+npm test
 ```
 
 It type-checks the sources against a Frontier checkout's Application Interface,
 runs the tests, and bundles each entry file the way the Host does. It looks for
 the checkout at `../../frontier`, or at `FRONTIER_REPO`, and drives the views in
-Chromium with the checkout's Playwright. Set `CHAT_SCREENSHOTS` to a directory
-to keep screenshots of the views.
+Chromium with the checkout's Playwright and the checkout's own Design System,
+its stylesheet and Behaviors, as a view frame holds them; without them the
+browser tests fail rather than skip. Set `CHAT_SCREENSHOTS` to a directory to
+keep screenshots of the views.
+
+To see it in Frontier's Electron app, from a Frontier checkout:
+
+```sh
+bash modcon/scripts/tool.sh ui --remake --applications <a directory holding this repository and a Runtime>
+```
+
+The app's build carries the committed `HEAD` of each Application in that
+directory as an Initial Application. A Runtime Application (Claude Code or
+OpenCode, with its CLI on the worker) is needed for an agent to answer.
 
 ## License
 
