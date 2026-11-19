@@ -32,6 +32,7 @@ type Locator = {
   press(key: string): Promise<void>;
   textContent(): Promise<string | null>;
   getAttribute(name: string): Promise<string | null>;
+  inputValue(): Promise<string>;
   allTextContents(): Promise<string[]>;
   isVisible(): Promise<boolean>;
   isDisabled(): Promise<boolean>;
@@ -40,6 +41,7 @@ type Locator = {
   waitFor(options?: { state?: string; timeout?: number }): Promise<void>;
   first(): Locator;
   nth(index: number): Locator;
+  locator(selector: string): Locator;
   count(): Promise<number>;
   check(): Promise<void>;
 };
@@ -130,19 +132,13 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByRole('button', { name: 'Stop' }).click();
   await page.getByText('Canceled. What the agent did so far is kept.').first().waitFor();
 
-  await page.getByRole('button', { name: 'Mode: Default' }).click();
-  assert.equal(await page.getByRole('menuitemradio', { name: 'Default' }).getAttribute('aria-checked'), 'true', 'the mode in use is checked');
-  await page.getByRole('menuitemradio', { name: 'Plan' }).click();
+  assert.equal(await page.getByLabel('Mode', { exact: true }).inputValue(), 'default', 'the mode in use is chosen');
+  await page.getByLabel('Mode', { exact: true }).selectOption('plan');
   await page.getByText('Switched to plan mode').waitFor();
-  await page.getByRole('button', { name: 'Mode: Plan' }).waitFor();
-  await page.getByRole('button', { name: "Model: Agent's default" }).click();
-  await page.getByRole('menuitemradio', { name: 'Opus 5.5' }).click();
+  await page.getByLabel('Model', { exact: true }).selectOption('opus');
   await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.modelId ?? null")) === 'opus', 'the model change');
-  await page.getByRole('button', { name: 'Model: Opus 5.5' }).waitFor();
-  await page.getByRole('button', { name: /^Effort: / }).click();
-  await page.getByRole('menuitemradio', { name: 'High' }).click();
+  await page.getByLabel('Effort', { exact: true }).selectOption('high');
   await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.settings?.effort ?? null")) === 'high', 'the setting change');
-  await page.getByRole('button', { name: 'Effort: High' }).waitFor();
 
   await page.locator('input[type="file"]').setInputFiles([{ name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from([137, 80, 78, 71]) }]);
   await page.getByText('screen.png', { exact: false }).waitFor();
@@ -230,6 +226,23 @@ test('a chat whose agent is not open shows what it can, and the whole conversati
   await page.close();
 });
 
+test('the mode select shows once the agent reports its modes, after the chat opened, and follows a mode the agent switched to itself', {}, async () => {
+  const page = await open('wide');
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.evaluate("window.install.reportDelay = 1500; window.install.agentModes = [{ id: 'default', name: 'Default', description: 'Asks before it edits.' }, { id: 'plan', name: 'Plan', description: 'Plans without editing.' }, { id: 'auto', name: 'Accept edits', description: 'Edits without asking.' }]");
+  await page.getByLabel('Prompt', { exact: true }).fill('Plan the relay queue');
+  await page.getByLabel('Prompt', { exact: true }).press('Enter');
+  await page.locator('.you').first().waitFor();
+  assert.equal(await page.getByLabel('Mode', { exact: true }).count(), 0, 'no modes before the agent reports them');
+  const mode = page.getByLabel('Mode', { exact: true });
+  await mode.waitFor({ timeout: 3000 });
+  assert.deepEqual([await mode.locator('option').allTextContents(), await mode.inputValue()], [['Default', 'Plan', 'Accept edits'], 'default']);
+  assert.deepEqual([await mode.getAttribute('data-size'), await mode.getAttribute('data-variant')], ['small', 'ghost'], "the Design System's small ghost select");
+  await page.evaluate("window.install.sessionMap.get('session-1').switchMode('plan')");
+  await eventually(async () => (await mode.inputValue()) === 'plan', 'the mode the agent switched to');
+  await page.close();
+});
+
 test('the compact panel shows the list or one chat at a time, with a way back', {}, async () => {
   const page = await open('compact', { width: 390, height: 780 });
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
@@ -292,8 +305,7 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   assert.ok((await widths()).transcript <= 860, 'a reading column at first');
   await shot(page, 'wide-width-column');
   await page.getByRole('button', { name: 'More' }).click();
-  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Full width' }).getAttribute('aria-checked'), 'false');
-  await page.getByRole('menuitemcheckbox', { name: 'Full width' }).click();
+  await page.getByRole('menuitem', { name: 'Fill the width' }).click();
   await eventually(async () => (await widths()).transcript > 1000 && (await widths()).composer > 1000, 'the transcript and composer to fill the width');
   assert.equal(await page.evaluate<string>("JSON.stringify(window.surfacePreferences.get('width'))"), '"fill"');
   await shot(page, 'wide-width-fill');
@@ -302,8 +314,7 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   await page.getByText('The build bundles each Interface on its own.').waitFor();
   assert.ok((await widths()).transcript > 1000, 'the choice is remembered');
   await page.getByRole('button', { name: 'More' }).click();
-  assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Full width' }).getAttribute('aria-checked'), 'true');
-  await page.getByRole('menuitemcheckbox', { name: 'Full width' }).click();
+  await page.getByRole('menuitem', { name: 'Reading width' }).click();
   await eventually(async () => (await widths()).transcript <= 860, 'the reading column again');
   await page.close();
 });

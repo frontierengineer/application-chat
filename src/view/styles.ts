@@ -106,8 +106,7 @@ details.thinking .body { white-space: pre-wrap; color: var(--frontier-color-text
 .composer .chips:empty { display: none; }
 .composer .chips { display: flex; flex-wrap: wrap; gap: var(--frontier-space-2); }
 .composer .status { color: var(--frontier-color-text-muted); font-size: var(--frontier-font-size-small); display: inline-flex; gap: var(--frontier-space-2); align-items: center; min-inline-size: 0; }
-.composer .picker { flex: none; }
-.composer .picker > button { max-inline-size: 14rem; }
+.composer select { inline-size: auto; max-inline-size: 14rem; }
 /* A chat keeps a reading column unless the person chose to fill the view's width. */
 .main[data-width="fill"] :is(.transcript, .composer, .below-composer) { max-inline-size: none; }
 .composer.dragging { box-shadow: 0 0 0 2px var(--frontier-color-primary); }

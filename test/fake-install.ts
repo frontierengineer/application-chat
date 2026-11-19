@@ -6,6 +6,7 @@ import type {
   Result,
   RuntimeOnWorker,
   SessionCreateOptions,
+  SessionMode,
   SessionModel,
   SessionPromptOptions,
   Subscription,
@@ -97,7 +98,8 @@ export class FakeSession {
   agentId: string | null;
   active = true;
   reason: string | null = null;
-  modeState = { current: 'default' as string | null, available: [{ id: 'default', name: 'Default', description: null }, { id: 'plan', name: 'Plan', description: 'Plans before it acts' }] };
+  // Empty until the agent reports its modes, which it does once it opens, after the session is created.
+  modeState: { current: string | null; available: SessionMode[] } = { current: null, available: [] };
   modelState: SessionModel | null = null;
   capabilities: PromptCapabilities = { image: true, audio: false, embeddedContext: true };
   history: TranscriptEvent[] = [];
@@ -131,6 +133,19 @@ export class FakeSession {
   modes() { return this.modeState; }
   commands() { return []; }
   promptCapabilities(): PromptCapabilities { return this.capabilities; }
+
+  // The agent reporting itself as it opens, told through sessions.onChanged as the Application context tells it.
+  report(available: SessionMode[], current: string | null): void {
+    this.modeState = { current, available };
+    this.install.changed('session', this.id);
+  }
+
+  // The agent changing its own mode, as when it leaves plan mode.
+  switchMode(modeId: string): void {
+    this.modeState = { ...this.modeState, current: modeId };
+    this.emit({ type: 'mode', modeId, timestamp: this.install.now() });
+    this.install.changed('session', this.id);
+  }
 
   emit(event: TranscriptEvent): void {
     this.history.push(event);
@@ -232,6 +247,9 @@ export interface FakeRuntime {
 export class FakeInstall {
   // How long sessions.create takes, as launching a real agent does.
   createDelay = 0;
+  // How long after a session is created its agent reports the modes it offers.
+  reportDelay = 0;
+  agentModes: SessionMode[] = [{ id: 'default', name: 'Default', description: null }, { id: 'plan', name: 'Plan', description: 'Plans before it acts' }];
   notified: { title: string; body?: string; priority: string }[] = [];
   readonly store = new FakeStore();
   readonly sessionMap = new Map<string, FakeSession>();
@@ -310,6 +328,7 @@ export class FakeInstall {
             workspace.holders += 1;
           }
           install.changed('session', session.id, 'added');
+          setTimeout(() => { if (install.agentModes.length > 0) session.report(install.agentModes, install.agentModes[0]!.id); }, install.reportDelay);
           return ok(session);
         },
         async list() { return ok([...install.sessionMap.values()]); },
