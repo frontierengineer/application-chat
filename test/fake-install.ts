@@ -365,7 +365,7 @@ export class FakeInstall {
         },
         workspaceProvisioners: {
           async list() {
-            return ok(install.provisioners.map((provisioner) => ({ ...provisioner, applicationId: 'github.com/frontierengineer/git-worktrees', description: null, slots: () => ({ total: provisioner.total, used: 0, available: provisioner.total }) })));
+            return ok(install.provisioners.map((provisioner) => ({ ...provisioner, applicationId: 'github.com/frontierengineer/application-git-worktrees', description: null, slots: () => ({ total: provisioner.total, used: 0, available: provisioner.total }) })));
           },
           async get(id: string) {
             const provisioner = install.provisioners.find((entry) => entry.id === id);

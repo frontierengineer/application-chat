@@ -17,8 +17,8 @@ const models: AvailableModel[] = [
   { label: 'Claude Sonnet', versions: [{ id: 'sonnet', label: 'Sonnet 5.5', contextWindow: 200000, settings: [] }] },
 ];
 install.workers.push({ id: 'w1', title: 'Laptop', connected: true }, { id: 'w2', title: 'Build server', connected: true });
-install.addRuntime('github.com/frontierengineer/claude-code', 'Claude Code', ['w1', 'w2'], models);
-install.addRuntime('github.com/frontierengineer/opencode', 'OpenCode', ['w1']);
+install.addRuntime('github.com/frontierengineer/application-claude-code', 'Claude Code', ['w1', 'w2'], models);
+install.addRuntime('github.com/frontierengineer/application-opencode', 'OpenCode', ['w1']);
 install.runtimes[1]!.reports.w2 = { ready: false, reason: 'OpenCode is not installed on this worker yet. It is installed automatically.', models: [] };
 install.provisioners.push({ id: 'git-1', title: 'frontier on Laptop', workerId: 'w1', total: 4 });
 

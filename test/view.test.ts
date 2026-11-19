@@ -98,7 +98,7 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   assert.equal(await page.locator('.you').first().textContent(), 'You said:Fix the flaky login test', 'the first prompt shows at once, while the agent cannot yet replay');
   const created = await page.evaluate<{ method: string; input: Record<string, unknown> }[]>('window.install.calls');
   assert.equal(created[0]?.method, 'create-chat');
-  assert.equal(created[0]?.input.runtimeId, 'github.com/frontierengineer/claude-code');
+  assert.equal(created[0]?.input.runtimeId, 'github.com/frontierengineer/application-claude-code');
   assert.equal(created[0]?.input.workerId, 'w1');
   assert.equal(await page.locator('.chat-list .entry-title').first().textContent(), 'Fix the flaky login test');
   await eventually(async () => ((await page.locator('.composer .status').textContent()) ?? '').startsWith('Running'), 'the running clock');
@@ -164,7 +164,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByText('Options').click();
   await page.getByLabel('Worker', { exact: true }).selectOption('w2');
-  await page.getByLabel('Runtime', { exact: true }).selectOption('github.com/frontierengineer/opencode');
+  await page.getByLabel('Runtime', { exact: true }).selectOption('github.com/frontierengineer/application-opencode');
   await page.getByText('OpenCode is not ready on Build server: OpenCode is not installed on this worker yet.', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Start chat' }).isDisabled(), true);
   await shot(page, 'desktop-not-ready');
@@ -176,7 +176,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.locator('.you').first().waitFor();
   const calls = await page.evaluate<{ input: Record<string, unknown> }[]>('window.install.calls');
   assert.deepEqual(calls[0]?.input.workspace, { workspaceProvisionerId: 'git-1', name: 'fix-login' });
-  assert.equal(calls[0]?.input.runtimeId, 'github.com/frontierengineer/opencode');
+  assert.equal(calls[0]?.input.runtimeId, 'github.com/frontierengineer/application-opencode');
   assert.match((await page.locator('.conversation-header .meta').textContent()) ?? '', /OpenCode on Laptop · fix-login/);
   await page.close();
 });

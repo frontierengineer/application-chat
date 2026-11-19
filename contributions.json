@@ -4,10 +4,10 @@
   "color": "#6c5ce7",
   "description": "Talk with agents. Start a chat on any runtime and worker, in a workspace or without one, and follow every turn as it runs.",
   "dependencies": [
-    { "id": "github.com/frontierengineer/claude-code", "reason": "Claude Code is a runtime to chat with." },
-    { "id": "github.com/frontierengineer/opencode", "reason": "OpenCode is a runtime to chat with." },
-    { "id": "github.com/frontierengineer/git-worktrees", "reason": "A chat can work in its own git worktree of a repository." },
-    { "id": "github.com/frontierengineer/directory-workspaces", "reason": "A chat can work in a directory of its own." }
+    { "id": "github.com/frontierengineer/application-claude-code", "reason": "Claude Code is a runtime to chat with." },
+    { "id": "github.com/frontierengineer/application-opencode", "reason": "OpenCode is a runtime to chat with." },
+    { "id": "github.com/frontierengineer/application-git-worktrees", "reason": "A chat can work in its own git worktree of a repository." },
+    { "id": "github.com/frontierengineer/application-directory-workspaces", "reason": "A chat can work in a directory of its own." }
   ],
   "sessions": { "visibility": "public" },
   "surface": {

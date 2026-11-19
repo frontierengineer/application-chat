@@ -43,6 +43,7 @@ frontier-badge[data-state="running"]::before { animation: chat-pulse var(--chat-
 .conversation-header small { color: var(--frontier-color-text-muted); }
 .usage { display: inline-flex; gap: var(--frontier-space-2); align-items: center; color: var(--frontier-color-text-muted); font-size: var(--frontier-font-size-small); white-space: nowrap; }
 .usage meter { inline-size: 64px; }
+.usage:empty { display: none; }
 .notices:empty { display: none; }
 .notices { padding: 0 var(--frontier-space-5); display: grid; gap: var(--frontier-space-2); }
 .notices > [role] { display: flex; gap: var(--frontier-space-3); align-items: center; }

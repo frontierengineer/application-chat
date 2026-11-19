@@ -58,8 +58,6 @@ export class Conversation {
   private subscriptions: Subscription[] = [];
   private boundSessionId: string | null = null;
   private replayUnavailable = false;
-  // History was asked for while a turn ran, when an agent cannot replay; asked again when the turn ends.
-  private historyWaiting = false;
   private historyProblem: string | null = null;
   private actionProblem: string | null = null;
   private lastFinished: TurnFinishedEvent | null = null;
@@ -73,7 +71,12 @@ export class Conversation {
   private readonly titleElement = h('h2', {});
   private readonly badges = ds('frontier-row', { wrap: true, gap: '2' });
   private readonly metaElement = h('small', { class: 'meta' });
-  private readonly controls = ds('frontier-row', { gap: '2', class: 'controls' });
+  private readonly usageSlot = h('span', { class: 'usage' });
+  private readonly menuSlot = h('span', {});
+  private readonly controls = ds('frontier-row', { gap: '2', class: 'controls' }, this.usageSlot, this.menuSlot);
+  private menu: HTMLElement | null = null;
+  private menuItems = '';
+  private choicesSignature = '';
   private readonly notices = h('div', { class: 'notices' });
   private readonly scroller = ds('frontier-scroll', { role: 'region', tabindex: '0' });
   private readonly transcript = ds('frontier-stack', { class: 'transcript', padding: '5', gap: '4', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
@@ -219,7 +222,6 @@ export class Conversation {
     const turnRunning = session.currentTurn() !== null;
     const history = await session.transcript.history();
     if (this.disposed || session.id !== this.boundSessionId) return;
-    this.historyWaiting = false;
     if (history.ok) {
       this.replayUnavailable = false;
       this.historyProblem = null;
@@ -228,7 +230,6 @@ export class Conversation {
       this.scrollToEnd();
     } else if (history.unavailable && (turnRunning || session.currentTurn() !== null)) {
       // An agent cannot replay while it runs a turn: what streams in is shown, and the whole conversation once the turn ends.
-      this.historyWaiting = true;
     } else if (history.unavailable) {
       this.replayUnavailable = true;
     } else {
@@ -242,8 +243,9 @@ export class Conversation {
   private scheduleReload(): void {
     window.clearTimeout(this.reloadTimer);
     this.reloadTimer = window.setTimeout(() => {
+      // Asked again even after an answer of no replay: that answer may have come while a turn ran that this view had not heard start.
       const session = this.handle.session();
-      if (session && (!this.replayUnavailable || this.historyWaiting)) void this.loadHistory(session);
+      if (session) void this.loadHistory(session);
     }, 400);
   }
 
@@ -351,23 +353,37 @@ export class Conversation {
     this.element.setAttribute('aria-label', this.handle.title());
     this.metaElement.textContent = this.handle.meta();
     this.badges.replaceChildren(stateBadge(stateOf(session, this.handle.record, t)), this.metaElement);
-    const controls: HTMLElement[] = [];
     const usage = this.model.usage;
     if (usage && usage.contextWindow > 0) {
       const share = Math.min(1, usage.contextUsed / usage.contextWindow);
       const label = t('conversation.context', { used: tokens(usage.contextUsed, this.host.language), window: tokens(usage.contextWindow, this.host.language) });
-      controls.push(h('span', { class: 'usage', title: label },
+      this.usageSlot.title = label;
+      this.usageSlot.replaceChildren(
         h('meter', { min: '0', max: '1', low: '0.7', high: '0.9', optimum: '0', value: String(share), 'aria-label': label }),
         `${Math.round(share * 100)}%`,
         usage.costAmount !== null && usage.costCurrency ? ` · ${money(usage.costAmount, usage.costCurrency, this.host.language)}` : '',
-      ));
+      );
+    } else {
+      this.usageSlot.replaceChildren();
     }
+    const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', this.handle.remove ? 'remove' : ''].filter(Boolean);
+    // The menu is drawn again only when its items change, so a redraw never closes it under the person's pointer.
+    if (values.join(' ') !== this.menuItems || this.menu === null) {
+      this.menuItems = values.join(' ');
+      this.menu = this.drawMenu(values);
+      this.menuSlot.replaceChildren(...(this.menu ? [this.menu] : []));
+    }
+    this.drawChoices();
+  }
+
+  private drawMenu(values: string[]): HTMLElement | null {
+    const t = this.host.t;
     const items: HTMLElement[] = [];
     const item = (value: string, label: string, tone?: string) => h('li', {}, h('button', { type: 'button', 'data-value': value, 'data-tone': tone }, label));
-    if (this.handle.rename) items.push(item('rename', t('conversation.rename')));
-    if (session) items.push(item('release', t('conversation.release')));
-    else if (this.handle.resume) items.push(item('resume', t('conversation.resume')));
-    if (this.handle.remove) items.push(h('li', {}, h('hr')), item('remove', t('conversation.remove'), 'danger'));
+    for (const value of values) {
+      if (value === 'remove') items.push(h('li', {}, h('hr')), item('remove', t('conversation.remove'), 'danger'));
+      else items.push(item(value, t(`conversation.${value}`)));
+    }
     if (items.length > 0) {
       const menu = ds('frontier-menu', {},
         h('button', { type: 'button', 'data-variant': 'ghost' }, t('conversation.more'), icon('down')),
@@ -380,16 +396,19 @@ export class Conversation {
         else if (value === 'resume') void this.resume();
         else if (value === 'remove') void this.remove();
       });
-      controls.push(menu);
+      return menu;
     }
-    this.controls.replaceChildren(...controls);
-    this.drawChoices();
+    return null;
   }
 
   // The runtime, and the model and mode where the agent lets them change, sit in the composer's bar.
   private drawChoices(): void {
     const t = this.host.t;
     const session = this.handle.session();
+    // Drawn again only when what it shows changes, so an open select is never replaced under the person.
+    const signature = JSON.stringify([this.host.runtimeTitle(this.handle.runtimeId), session?.id ?? null, session?.model() ?? null, session?.modes() ?? null, this.handle.models()]);
+    if (signature === this.choicesSignature) return;
+    this.choicesSignature = signature;
     const choices: HTMLElement[] = [ds('frontier-badge', { title: this.handle.meta() }, this.host.runtimeTitle(this.handle.runtimeId))];
     if (session) {
       const groups = this.handle.models();
