@@ -33,7 +33,7 @@ export interface ChatHandle {
 }
 
 export interface ConversationHost extends RenderEnvironment {
-  layout: 'desktop' | 'panel';
+  layout: 'wide' | 'compact';
   back(): void;
   // The prompt a chat was started with, shown at once until the transcript holds it.
   pending(key: string): string | null;
@@ -129,7 +129,7 @@ export class Conversation {
     this.element = h('main', { class: 'main', 'aria-label': handle.title() },
       ds('frontier-stack', { fill: true, gap: '0' },
         ds('frontier-row', { class: 'conversation-header', padding: '4', gap: '3', align: 'start' },
-          host.layout === 'panel' ? h('button', { type: 'button', 'data-variant': 'ghost', 'aria-label': t('conversation.back'), onclick: () => host.back() }, icon('back')) : null,
+          host.layout === 'compact' ? h('button', { type: 'button', 'data-variant': 'ghost', 'aria-label': t('conversation.back'), onclick: () => host.back() }, icon('back')) : null,
           ds('frontier-stack', { gap: '1', class: 'titles' }, this.titleElement, this.badges),
           this.controls,
         ),

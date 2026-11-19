@@ -6,8 +6,12 @@ Applications, written against Frontier's Application Interface
 
 ## What it does
 
-Chat contributes a **desktop** and a **panel**: on a workstation, the list of
-chats beside the open one; on a handheld panel, the list or one chat at a time.
+Chat contributes two **panels** a person places in a deck. **Chat** shows the
+list of chats beside the open one; it needs a keyboard and at least 720 by 420
+pixels. **Chat, one at a time** shows the list or one chat, with targets sized
+for a finger; it fits 320 by 400 and works by touch. Either can be set, in its
+deck, to open on one chat, and the actions bring whichever the deck shown holds
+forward.
 
 - **Starting a chat** takes one prompt. Chat picks a runtime that is ready on a
   connected worker, remembering the last choice on each surface. Options choose
@@ -68,13 +72,13 @@ source lists the chats for their inputs.
 | `contributions.json` | The Application as data. |
 | `host.ts`, `src/host/chats.ts` | The methods. |
 | `surface.ts`, `src/actions.ts` | The surface registration and its actions. |
-| `src/view/` | The desktop and panel: the list, the new chat form, the conversation, the transcript and the composer. |
+| `src/view/` | The two panels: the list, the new chat form, the conversation, the transcript and the composer. |
 | `src/shared.ts` | The chat record and the methods' input and output. |
 | `translations.json` | Every word a person reads, by token. |
 | `test/` | Unit tests of the methods and the transcript, and browser tests of the views. |
 
 The views are plain semantic HTML and the Design System's `frontier-*`
-elements: the desktop is a `frontier-split` whose list the person drags to
+elements: the wide panel is a `frontier-split` whose list the person drags to
 size, the open chat a stack of a header row, a `frontier-scroll` transcript
 and the composer as a `frontier-card`; states are `frontier-badge`s, empty
 views `frontier-empty`, the chat's actions a `frontier-menu`. Chat's own CSS

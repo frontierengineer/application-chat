@@ -5,27 +5,37 @@
   "description": "Talk with agents. Start a chat on any runtime and worker, in a workspace or without one, and follow every turn as it runs.",
   "sessions": { "visibility": "public" },
   "surface": {
-    "desktop": {
-      "title": "Chat",
-      "description": "Your chats with agents, each beside the list of the others.",
-      "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }]
-    },
-    "panel": {
-      "title": "Chat",
-      "description": "Your chats with agents, one at a time.",
-      "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
-      "minWidth": 380
-    },
+    "panels": [
+      {
+        "id": "chat",
+        "title": "Chat",
+        "description": "Your chats with agents, each beside the list of the others.",
+        "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
+        "minWidth": 720,
+        "minHeight": 420,
+        "inputs": ["keyboard"],
+        "fields": [{ "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }]
+      },
+      {
+        "id": "chat-compact",
+        "title": "Chat, one at a time",
+        "description": "Your chats with agents, the list or one chat at a time, sized for a hand.",
+        "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
+        "minWidth": 320,
+        "minHeight": 400,
+        "fields": [{ "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }]
+      }
+    ],
     "actions": [
       {
         "id": "new-chat",
         "title": "New chat",
-        "description": "Opens Chat on a new chat, where a person writes the first prompt and chooses the runtime, worker, model and workspace."
+        "description": "Brings Chat forward on a new chat, where a person writes the first prompt and chooses the runtime, worker, model and workspace."
       },
       {
         "id": "start-chat",
         "title": "Start a chat",
-        "description": "Starts a chat with an agent on the given runtime and worker, sends it the prompt, and opens it in Chat.",
+        "description": "Starts a chat with an agent on the given runtime and worker, sends it the prompt, and brings it forward in Chat.",
         "input": [
           { "type": "select", "key": "runtime", "label": "Runtime", "required": true, "choices": { "entity": "runtime" } },
           { "type": "select", "key": "worker", "label": "Worker", "required": true, "choices": { "entity": "worker" } },
@@ -36,7 +46,7 @@
       {
         "id": "open-chat",
         "title": "Open chat",
-        "description": "Opens a chat in Chat.",
+        "description": "Brings a chat forward in Chat, in the deck shown.",
         "input": [
           { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
         ]

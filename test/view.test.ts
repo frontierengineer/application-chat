@@ -66,7 +66,7 @@ after(async () => {
   await browser?.close();
 });
 
-async function open(layout: 'desktop' | 'panel', size = { width: 1180, height: 760 }, setup = ''): Promise<Page> {
+async function open(layout: 'wide' | 'compact', size = { width: 1180, height: 760 }, setup = ''): Promise<Page> {
   const page = await browser!.newPage({ viewport: size, colorScheme: 'light' });
   await page.setContent('<!doctype html><html data-mode="light"><head><meta charset="utf-8"></head><body></body></html>');
   await page.addScriptTag({ content: designSystem, type: 'module' });
@@ -90,10 +90,10 @@ async function eventually(check: () => Promise<boolean>, what: string, attempts 
 }
 
 test('a first chat starts from one prompt, streams its turn, queues, cancels, switches mode and model, attaches, releases and resumes', {}, async () => {
-  const page = await open('desktop');
+  const page = await open('wide');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   assert.match((await page.locator('.summary-text').textContent()) ?? '', /^Claude Code on Laptop · Agent's default · No workspace$/);
-  await shot(page, 'desktop-new-chat');
+  await shot(page, 'wide-new-chat');
 
   await page.getByLabel('Prompt', { exact: true }).fill('Fix the flaky login test');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
@@ -114,7 +114,7 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByText('Wait for navigation').waitFor();
   await page.locator('details.tool').nth(1).click();
   await page.locator('.diff .line[data-sign="+"]').first().waitFor();
-  await shot(page, 'desktop-streaming');
+  await shot(page, 'wide-streaming');
 
   await page.getByLabel('Prompt', { exact: true }).fill('Also run the whole suite');
   assert.equal(await page.getByRole('button', { name: 'Queue' }).isVisible(), true);
@@ -166,19 +166,19 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.evaluate("window.stream('Resumed, and the suite passes.')");
   await page.evaluate('window.finish()');
   await page.getByText('Resumed, and the suite passes.').waitFor();
-  await shot(page, 'desktop-resumed');
+  await shot(page, 'wide-resumed');
   await page.close();
 });
 
 test('the new chat form says why a runtime is not ready, and starts a chat in a new workspace', {}, async () => {
-  const page = await open('desktop');
+  const page = await open('wide');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByText('Options').click();
   await page.getByLabel('Worker', { exact: true }).selectOption('w2');
   await page.getByLabel('Runtime', { exact: true }).selectOption('github.com/frontierengineer/application-opencode');
   await page.getByText('OpenCode is not ready on Build server: OpenCode is not installed on this worker yet.', { exact: false }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Start chat' }).isDisabled(), true);
-  await shot(page, 'desktop-not-ready');
+  await shot(page, 'wide-not-ready');
   await page.getByLabel('Worker', { exact: true }).selectOption('w1');
   await page.getByLabel('New workspace', { exact: true }).check();
   await page.getByLabel('Name', { exact: true }).fill('fix-login');
@@ -193,7 +193,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
 });
 
 test('a chat whose agent takes long to start shows at once as starting, with its prompt, then runs', {}, async () => {
-  const page = await open('desktop');
+  const page = await open('wide');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.evaluate('window.install.createDelay = 3000');
   await page.getByLabel('Prompt', { exact: true }).fill('Review the open pull request');
@@ -202,14 +202,14 @@ test('a chat whose agent takes long to start shows at once as starting, with its
   assert.equal(await page.locator('form[aria-label="Send a prompt"] button[type="submit"]').isDisabled(), true, 'nothing more is sent while the agent starts');
   assert.equal(await page.locator('.chat-list frontier-badge').first().textContent(), 'Starting');
   assert.deepEqual(await page.locator('.you').allTextContents(), ['You said:Review the open pull request'], 'the prompt shows while the agent starts');
-  await shot(page, 'desktop-starting');
+  await shot(page, 'wide-starting');
   await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the agent to start and run the prompt', 150);
   assert.equal(await page.locator('.you').count(), 1);
   await page.close();
 });
 
 test('a chat whose agent is not open shows what it can, and the whole conversation once the agent opens again', {}, async () => {
-  const page = await open('desktop');
+  const page = await open('wide');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByLabel('Prompt', { exact: true }).fill('Summarize the changelog');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
@@ -230,8 +230,8 @@ test('a chat whose agent is not open shows what it can, and the whole conversati
   await page.close();
 });
 
-test('the panel shows the list or one chat at a time, with a way back', {}, async () => {
-  const page = await open('panel', { width: 390, height: 780 });
+test('the compact panel shows the list or one chat at a time, with a way back', {}, async () => {
+  const page = await open('compact', { width: 390, height: 780 });
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
   assert.equal(await page.getByText('No chats yet. Start one, and it shows here.').isVisible(), true);
   await page.getByRole('button', { name: 'New chat' }).click();
@@ -244,23 +244,28 @@ test('the panel shows the list or one chat at a time, with a way back', {}, asyn
   await page.evaluate('window.finish()');
   await page.getByText('Only the live conversation shows').waitFor();
   assert.equal(await page.getByText('The nightly build is green.').count(), 1, 'what streamed in stays when the agent cannot replay');
-  await shot(page, 'panel-chat');
+  await shot(page, 'compact-chat');
   await page.getByRole('button', { name: 'Back to chats' }).click();
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
   assert.equal(await page.locator('.chat-list .entry-title').first().textContent(), 'Check on the nightly build');
-  await shot(page, 'panel-list');
+  await shot(page, 'compact-list');
+  const chatId = await page.evaluate<string>("(async () => (await window.install.store.list('chats/')).value[0].slice('chats/'.length))()");
+  await page.evaluate(`window.setPanelValues({ chat: 'not-a-chat' })`);
+  assert.equal(await page.getByRole('heading', { name: 'Chats' }).isVisible(), true, 'a chat that Chat does not have is not followed');
+  await page.evaluate(`window.setPanelValues({ chat: ${JSON.stringify(chatId)} })`);
+  await page.getByRole('button', { name: 'Back to chats' }).waitFor();
   await page.close();
 });
 
 test('with no runtime installed, the new chat form says so and points to installing one', {}, async () => {
-  const page = await open('desktop', undefined, 'window.install.runtimes.length = 0');
+  const page = await open('wide', undefined, 'window.install.runtimes.length = 0');
   await page.getByRole('heading', { name: 'No runtime yet' }).waitFor();
   await page.getByText('Install an Application that offers one', { exact: false }).waitFor();
   await page.close();
 });
 
 test('a model setting\'s description is behind a question mark beside its label, not a caption under it', {}, async () => {
-  const page = await open('desktop');
+  const page = await open('wide');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByText('Options').click();
   await page.getByLabel('Model', { exact: true }).selectOption('opus');
@@ -270,12 +275,12 @@ test('a model setting\'s description is behind a question mark beside its label,
   assert.equal(await about.getAttribute('title'), 'How hard the model thinks before it answers.', 'it shows on hover');
   await about.click();
   await page.getByText('How hard the model thinks', { exact: false }).waitFor({ state: 'visible' });
-  await shot(page, 'desktop-setting-about');
+  await shot(page, 'wide-setting-about');
   await page.close();
 });
 
 test('a chat keeps a reading column or fills the width, as the Surface last chose', {}, async () => {
-  const page = await open('desktop', { width: 1600, height: 800 });
+  const page = await open('wide', { width: 1600, height: 800 });
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.getByLabel('Prompt', { exact: true }).fill('Explain the build');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
@@ -285,13 +290,13 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   await page.getByText('The build bundles each Interface on its own.').waitFor();
   const widths = () => page.evaluate<{ transcript: number; composer: number }>("({ transcript: document.querySelector('.transcript').getBoundingClientRect().width, composer: document.querySelector('.composer').getBoundingClientRect().width })");
   assert.ok((await widths()).transcript <= 860, 'a reading column at first');
-  await shot(page, 'desktop-width-column');
+  await shot(page, 'wide-width-column');
   await page.getByRole('button', { name: 'More' }).click();
   assert.equal(await page.getByRole('menuitemcheckbox', { name: 'Full width' }).getAttribute('aria-checked'), 'false');
   await page.getByRole('menuitemcheckbox', { name: 'Full width' }).click();
   await eventually(async () => (await widths()).transcript > 1000 && (await widths()).composer > 1000, 'the transcript and composer to fill the width');
   assert.equal(await page.evaluate<string>("JSON.stringify(window.surfacePreferences.get('width'))"), '"fill"');
-  await shot(page, 'desktop-width-fill');
+  await shot(page, 'wide-width-fill');
   await page.getByRole('button', { name: 'New chat' }).click();
   await page.locator('.chat-list button.entry').first().click();
   await page.getByText('The build bundles each Interface on its own.').waitFor();

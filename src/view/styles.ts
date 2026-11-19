@@ -13,9 +13,9 @@ body { overflow: hidden; background: var(--frontier-color-background); }
 .chat { --chat-pulse: calc(var(--frontier-duration-page) * 5.5); block-size: 100vh; }
 @keyframes chat-pulse { 50% { opacity: 0.35; } }
 
-/* The whole view: the list beside the open chat on a desktop, one of them on a panel. */
-.chat.panel { display: flex; flex-direction: column; }
-.chat.panel > * { flex: 1; min-block-size: 0; }
+/* The whole view: the list beside the open chat when wide, one of them when compact. */
+.chat.compact { display: flex; flex-direction: column; }
+.chat.compact > * { flex: 1; min-block-size: 0; }
 .list-pane { background: var(--frontier-color-surface-sunken); border-radius: var(--frontier-radius-none); min-inline-size: 0; }
 .list-pane h1 { font-size: var(--frontier-font-size-heading-3); margin: 0; }
 .list-pane input[type="search"] { inline-size: 100%; box-sizing: border-box; }
@@ -135,9 +135,9 @@ details.thinking .body { white-space: pre-wrap; color: var(--frontier-color-text
 .new-chat legend { font-weight: 600; font-size: var(--frontier-font-size-small); padding: 0; margin-block-end: var(--frontier-space-1); }
 .new-chat .choices { display: flex; flex-wrap: wrap; gap: var(--frontier-space-2) var(--frontier-space-4); }
 
-/* A panel is touched: controls grow to a finger's size. */
-.panel button:not(.entry), .panel select, .panel input, .panel summary { min-block-size: 44px; }
-.panel .composer { inline-size: calc(100% - 2 * var(--frontier-space-3)); margin-block-end: var(--frontier-space-3); }
-.panel .below-composer { inline-size: calc(100% - 2 * var(--frontier-space-3)); }
-.panel .you { max-inline-size: 85%; }
+/* The compact panel is touched: controls grow to a finger's size. */
+.compact button:not(.entry), .compact select, .compact input, .compact summary { min-block-size: 44px; }
+.compact .composer { inline-size: calc(100% - 2 * var(--frontier-space-3)); margin-block-end: var(--frontier-space-3); }
+.compact .below-composer { inline-size: calc(100% - 2 * var(--frontier-space-3)); }
+.compact .you { max-inline-size: 85%; }
 `;

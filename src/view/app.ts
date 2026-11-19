@@ -1,5 +1,5 @@
 import type {
-  DesktopContext,
+  FieldValues,
   PanelContext,
   Result,
   Runtime,
@@ -14,11 +14,12 @@ import { ago } from './format.ts';
 import { NewChatForm, type NewChatDefaults } from './new-chat.ts';
 import { css } from './styles.ts';
 
-export type Layout = 'desktop' | 'panel';
+/** Wide shows the list beside the open chat; compact shows one, then the other. */
+export type Layout = 'wide' | 'compact';
 type Selection = { kind: 'chat'; id: string } | { kind: 'session'; id: string } | { kind: 'new' } | null;
 
 export class ChatApp {
-  private readonly context: DesktopContext | PanelContext;
+  private readonly context: PanelContext;
   private readonly layout: Layout;
   private readonly chats = new Map<string, ChatRecord>();
   private readonly sessions = new Map<string, Session>();
@@ -38,7 +39,7 @@ export class ChatApp {
   private drafts: Record<string, string>;
   private draftTimer = 0;
 
-  constructor(context: DesktopContext | PanelContext, layout: Layout) {
+  constructor(context: PanelContext, layout: Layout) {
     this.context = context;
     this.layout = layout;
     this.drafts = context.surfacePreferences.get<Record<string, string>>('drafts', {});
@@ -61,7 +62,7 @@ export class ChatApp {
         ds('frontier-scroll', {}, ds('frontier-stack', { padding: '2', gap: '1' }, this.list)),
       ),
     );
-    this.root = layout === 'desktop' ? ds('frontier-split', { class: 'chat desktop' }) : h('div', { class: 'chat panel' });
+    this.root = layout === 'wide' ? ds('frontier-split', { class: 'chat wide' }) : h('div', { class: 'chat compact' });
     this.root.addEventListener('frontier-resize', (event) => {
       const size = (event as CustomEvent<{ size: number }>).detail?.size;
       if (typeof size === 'number' && size > 0) context.surfacePreferences.set('listWidth', Math.round(size));
@@ -107,9 +108,21 @@ export class ChatApp {
     this.loaded = true;
     if (this.selection?.kind === 'chat' && !this.chats.has(this.selection.id)) this.selection = null;
     if (this.selection?.kind === 'session' && !this.sessions.has(this.selection.id)) this.selection = null;
-    if (this.selection === null && this.layout === 'desktop') this.selection = this.firstChat() ?? { kind: 'new' };
+    const followed = this.followedChat(this.context.instance.values());
+    if (followed !== null) this.selection = { kind: 'chat', id: followed };
+    if (this.selection === null && this.layout === 'wide') this.selection = this.firstChat() ?? { kind: 'new' };
+    this.context.instance.onValuesChanged((values) => {
+      const chatId = this.followedChat(values);
+      if (chatId !== null) this.select({ kind: 'chat', id: chatId });
+    });
     await this.readOpenRequest();
     this.drawAll();
+  }
+
+  // The chat this Panel Instance follows, as set in its deck, when it is one Chat has.
+  private followedChat(values: FieldValues): string | null {
+    const chatId = values['chat'];
+    return typeof chatId === 'string' && this.chats.has(chatId) ? chatId : null;
   }
 
   // While this view shows a chat to the person, its finished turns need no notification.
@@ -332,7 +345,7 @@ export class ChatApp {
         },
         remove: async () => {
           const answer = await this.call('remove-chat', { chatId: chat.id });
-          if (answer.ok) this.select(this.layout === 'desktop' ? { kind: 'new' } : null);
+          if (answer.ok) this.select(this.layout === 'wide' ? { kind: 'new' } : null);
           return answer.ok ? { ok: true, value: undefined } : answer;
         },
       };
@@ -373,7 +386,7 @@ export class ChatApp {
     if (this.selection?.kind === 'chat' || this.selection?.kind === 'session') {
       const handle = this.handleFor(this.selection);
       if (!handle) {
-        this.selection = this.layout === 'desktop' ? this.firstChat() ?? { kind: 'new' } : null;
+        this.selection = this.layout === 'wide' ? this.firstChat() ?? { kind: 'new' } : null;
         this.drawAll();
         return;
       }
@@ -413,7 +426,7 @@ export class ChatApp {
             this.select({ kind: 'chat', id: chatId });
           });
         },
-        cancel: this.chats.size > 0 || this.layout === 'panel' ? () => this.select(this.layout === 'desktop' ? this.firstChat() : null) : null,
+        cancel: this.chats.size > 0 || this.layout === 'compact' ? () => this.select(this.layout === 'wide' ? this.firstChat() : null) : null,
       });
       main = this.form.element;
     } else {
@@ -425,12 +438,12 @@ export class ChatApp {
       )));
     }
     main.setAttribute('data-min', '360px');
-    if (this.layout === 'panel') this.root.replaceChildren(this.selection === null ? this.sidebar : main);
+    if (this.layout === 'compact') this.root.replaceChildren(this.selection === null ? this.sidebar : main);
     else this.root.replaceChildren(this.sidebar, h('hr'), main);
   }
 }
 
-export function mountChat(context: DesktopContext | PanelContext, layout: Layout): Promise<void> {
+export function mountChat(context: PanelContext, layout: Layout): Promise<void> {
   return new ChatApp(context, layout).start();
 }
 

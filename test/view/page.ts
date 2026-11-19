@@ -30,12 +30,13 @@ function live(): { session: FakeSession; turnId: string } | undefined {
 const preferences = new Map<string, unknown>();
 const clipboard: string[] = [];
 const modalAnswers: unknown[] = [];
+const valueHandlers: ((values: Record<string, unknown>) => void)[] = [];
 
-function surfaceContext(type: 'workstation' | 'panel'): SurfaceContext & { lifecycle: unknown } {
+function surfaceContext(type: 'workstation' | 'touch', values: Record<string, unknown> = {}): SurfaceContext & { lifecycle: unknown } {
   const ok = { ok: true as const, value: undefined };
   return {
     ...install.context(translations.en),
-    currentSurface: { id: 'surface-1', title: () => 'Work laptop', type, language: () => 'en-US', display: () => null },
+    currentSurface: { id: 'surface-1', title: () => 'Work laptop', type, language: () => 'en-US', inputs: () => (type === 'touch' ? ['touch'] : ['pointer', 'keyboard']) },
     surfacePreferences: {
       get: (key: string, fallback?: unknown) => (preferences.has(key) ? structuredClone(preferences.get(key)) : fallback ?? null),
       set: (key: string, value: unknown) => void preferences.set(key, structuredClone(value)),
@@ -43,8 +44,8 @@ function surfaceContext(type: 'workstation' | 'panel'): SurfaceContext & { lifec
     },
     clipboard: { copy: async (text: string) => { clipboard.push(text); return ok; } },
     cursor: { insertText: async () => ok },
-    desktop: { update: async () => ok, activate: async () => ok, deactivate: async () => ok, focus: async () => ok, blur: async () => ok },
-    panel: { open: async () => ok, close: async () => ok },
+    panels: { reveal: async () => ok, update: async () => ok },
+    instance: { panelId: type === 'touch' ? 'chat-compact' : 'chat', instanceId: 'instance-1', values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
     badges: { update: async () => ok },
     modals: {
       open: async () => ok,
@@ -64,10 +65,11 @@ Object.assign(window, {
   surfacePreferences: { get: (key: string) => preferences.get(key) ?? null },
   clipboard,
   modalAnswers,
-  mountView: async (layout: 'desktop' | 'panel') => {
-    const context = surfaceContext(layout === 'desktop' ? 'workstation' : 'panel');
-    if (layout === 'desktop') await surface.desktop.mount(context as never);
-    else await surface.panel.mount(context as never);
+  setPanelValues: (values: Record<string, unknown>) => { for (const handler of valueHandlers) handler(values); },
+  mountView: async (layout: 'wide' | 'compact', values: Record<string, unknown> = {}) => {
+    const context = surfaceContext(layout === 'wide' ? 'workstation' : 'touch', values);
+    if (layout === 'wide') await surface.panels.chat.mount(context as never);
+    else await surface.panels['chat-compact'].mount(context as never);
   },
   stream: (text: string) => {
     const turn = live();

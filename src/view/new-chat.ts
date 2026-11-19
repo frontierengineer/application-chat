@@ -21,7 +21,7 @@ export interface NewChatDefaults {
 
 export interface NewChatHost extends RenderEnvironment {
   context: SurfaceContext;
-  layout: 'desktop' | 'panel';
+  layout: 'wide' | 'compact';
   defaults(): NewChatDefaults;
   saveDefaults(defaults: NewChatDefaults): void;
   created(chatId: string, prompt: string): void;

@@ -3,11 +3,9 @@ import { listChatChoices, newChat, openChat, promptChat, releaseChat, startChat 
 import { mountChat } from './src/view/app.ts';
 
 export const registration = {
-  desktop: {
-    mount: (context) => mountChat(context, 'desktop'),
-  },
-  panel: {
-    mount: (context) => mountChat(context, 'panel'),
+  panels: {
+    chat: { mount: (context) => mountChat(context, 'wide') },
+    'chat-compact': { mount: (context) => mountChat(context, 'compact') },
   },
   actions: {
     'new-chat': { run: (context) => newChat(context) },

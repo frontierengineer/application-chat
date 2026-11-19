@@ -5,11 +5,11 @@ import { failure, text } from './text.ts';
 async function show(context: ActionContext, target: string): Promise<void | Failure | Unavailable> {
   const written = await context.store.putJson({ key: openKey(context.currentSurface.id), value: { target, at: Date.now() } });
   if (!written.ok) return written;
-  const desktop = await context.desktop.focus();
-  if (desktop.ok) return;
-  if (!desktop.unavailable) return desktop;
-  const panel = await context.panel.open();
-  if (!panel.ok) return panel;
+  const wide = await context.panels.reveal('chat');
+  if (wide.ok) return;
+  if (!wide.unavailable) return wide;
+  const compact = await context.panels.reveal('chat-compact');
+  if (!compact.ok && !compact.unavailable) return compact;
 }
 
 function required(context: ActionContext, input: Record<string, unknown>, key: string): string | Failure {
