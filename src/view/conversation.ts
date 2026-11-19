@@ -58,6 +58,8 @@ export class Conversation {
   private subscriptions: Subscription[] = [];
   private boundSessionId: string | null = null;
   private replayUnavailable = false;
+  // History answered unavailable once; a second answer with no turn running means the agent cannot replay.
+  private replayDoubted = false;
   private historyProblem: string | null = null;
   private actionProblem: string | null = null;
   private lastFinished: TurnFinishedEvent | null = null;
@@ -224,12 +226,20 @@ export class Conversation {
     if (this.disposed || session.id !== this.boundSessionId) return;
     if (history.ok) {
       this.replayUnavailable = false;
+      this.replayDoubted = false;
       this.historyProblem = null;
       this.model.reset(history.value);
       this.drawAll();
       this.scrollToEnd();
-    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null)) {
-      // An agent cannot replay while it runs a turn: what streams in is shown, and the whole conversation once the turn ends.
+    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !this.replayDoubted)) {
+      // An agent cannot replay while it runs a turn, and a turn may run that this view has not heard start: what
+      // streams in is shown, and history is asked for again when a turn ends or, failing that, in a few seconds.
+      this.replayDoubted = true;
+      window.clearTimeout(this.reloadTimer);
+      this.reloadTimer = window.setTimeout(() => {
+        const live = this.handle.session();
+        if (live && live.currentTurn() === null) void this.loadHistory(live);
+      }, 5000);
     } else if (history.unavailable) {
       this.replayUnavailable = true;
     } else {

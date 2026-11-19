@@ -139,7 +139,7 @@ export function renderItem(item: Item, environment: RenderEnvironment, existing?
         icon(toolIcons[kind]),
         h('span', { class: 'name' }, item.name),
         h('span', { class: 'summary-input' }, item.locations[0]?.path ?? summaryOf(item.input)),
-        ds('frontier-badge', { 'data-tone': toolTones[item.status] ?? 'muted', 'data-status': item.status }, statusText, item.result && !item.result.isError ? ` · ${(item.result.durationMilliseconds / 1000).toFixed(1)} s` : ''),
+        ds('frontier-badge', { 'data-tone': toolTones[item.status] ?? 'muted', 'data-status': item.status }, statusText, item.result && !item.result.isError && item.result.durationMilliseconds >= 100 ? ` · ${(item.result.durationMilliseconds / 1000).toFixed(1)} s` : ''),
       );
       const body = element.querySelector('.body')!;
       const parts: (HTMLElement | null)[] = [];

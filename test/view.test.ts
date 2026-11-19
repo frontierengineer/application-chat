@@ -191,6 +191,10 @@ test('the panel shows the list or one chat at a time, with a way back', {}, asyn
   await page.locator('.you').first().waitFor();
   await page.evaluate("window.stream('The nightly build is green.')");
   await page.getByText('The nightly build is green.').waitFor();
+  await page.evaluate("window.install.sessionMap.get('session-1').replay = false");
+  await page.evaluate('window.finish()');
+  await page.getByText('Only the live conversation shows').waitFor();
+  assert.equal(await page.getByText('The nightly build is green.').count(), 1, 'what streamed in stays when the agent cannot replay');
   await shot(page, 'panel-chat');
   await page.getByRole('button', { name: 'Back to chats' }).click();
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
