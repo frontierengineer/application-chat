@@ -443,7 +443,7 @@ export class Conversation {
       const groups = this.handle.models();
       if (groups.length > 0) {
         const current = session.model();
-        const select = h('select', { 'aria-label': t('conversation.model'), 'data-size': 'small' },
+        const select = h('select', { 'aria-label': t('conversation.model'), 'data-size': 'small', 'data-variant': 'ghost' },
           h('option', { value: '', selected: current === null }, t('conversation.default_model')),
           ...groups.map((group) => h('optgroup', { label: group.label },
             ...group.versions.map((version) => h('option', { value: version.id, selected: current?.modelId === version.id }, version.label)))));
@@ -461,7 +461,7 @@ export class Conversation {
       }
       const modes = session.modes();
       if (modes.available.length > 0) {
-        const select = h('select', { 'aria-label': t('conversation.mode'), 'data-size': 'small' },
+        const select = h('select', { 'aria-label': t('conversation.mode'), 'data-size': 'small', 'data-variant': 'ghost' },
           ...modes.available.map((mode) => h('option', { value: mode.id, selected: mode.id === modes.current, title: mode.description ?? undefined }, mode.name)));
         select.addEventListener('change', async () => {
           const answer = await session.setMode(select.value);
@@ -477,7 +477,7 @@ export class Conversation {
     const label = field.label;
     if (field.type !== 'select' || !Array.isArray(field.choices)) return h('span', {});
     const current = values[field.key] ?? field.default ?? '';
-    const select = h('select', { 'aria-label': label, 'data-size': 'small' },
+    const select = h('select', { 'aria-label': label, 'data-size': 'small', 'data-variant': 'ghost' },
       ...(field.choices as readonly { value: string; label?: string }[]).map((choice) => h('option', { value: choice.value, selected: choice.value === current }, choice.label ?? choice.value)));
     select.addEventListener('change', async () => {
       const model = session.model();
