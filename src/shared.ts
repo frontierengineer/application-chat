@@ -70,6 +70,14 @@ export function chatKey(chatId: string): string {
   return `chats/${chatId}`;
 }
 
+// Written while a view shows the chat to a person, so its finished turns need no notification.
+export function seenKey(chatId: string): string {
+  return `seen/${chatId}`;
+}
+
+// How long a view's mark that it shows a chat holds; a view writes it again well within this.
+export const SEEN_MILLISECONDS = 30_000;
+
 export function openKey(surfaceId: string): string {
   return `open/${surfaceId.replace(/[^A-Za-z0-9._-]/g, '-')}`;
 }

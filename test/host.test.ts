@@ -165,3 +165,17 @@ test('a chat that does not start in the background keeps why, and prompt-chat wi
   assert.equal(chat.startFailure, null);
   assert.deepEqual(install.sessionMap.get(chat.sessionId as string)?.prompts, ['Hello again']);
 });
+
+test('a turn that ends while no view shows its chat raises a notification; one that ends while a view shows it raises none', async () => {
+  const { install, call } = setup();
+  const created = value(await call<CreateChatOutput>('create-chat', { runtimeId: 'claude', workerId: 'w1', title: 'Tidy', prompt: 'Tidy the README' }));
+  const session = install.sessionMap.get(created.sessionId as string)!;
+  session.finish(created.turn!.turnId);
+  await until(() => install.notified.length === 1, 'the notification');
+  assert.deepEqual(install.notified[0], { title: 'Tidy: the agent finished', body: 'It waits for your next prompt in Chat.', priority: 'normal' });
+  await install.store.putJson({ key: `seen/${created.chatId}`, value: { at: Date.now() } });
+  const sent = value(await call<PromptChatOutput>('prompt-chat', { chatId: created.chatId, prompt: 'And the changelog' }));
+  session.finish(sent.turnId as string);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(install.notified.length, 1, 'a chat on screen is not notified');
+});

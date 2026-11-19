@@ -6,7 +6,7 @@ import type {
   Session,
   Worker,
 } from '../../../application';
-import { type ChatPrompt, type ChatRecord, type PromptChatOutput, applicationId, chatKey, openKey } from '../shared.ts';
+import { type ChatPrompt, type ChatRecord, type PromptChatOutput, SEEN_MILLISECONDS, applicationId, chatKey, openKey, seenKey } from '../shared.ts';
 import { failure, text } from '../text.ts';
 import { type ChatHandle, Conversation, type ConversationHost } from './conversation.ts';
 import { ds, h, icon, style } from './dom.ts';
@@ -93,8 +93,13 @@ export class ChatApp {
     this.context.sessions.onChanged((change) => void this.reloadSession(change.id, change.kind));
     this.context.runtimes.onChanged(() => void this.reloadRuntimes().then(() => this.form?.load()));
     this.context.workers.onChanged(() => void this.reloadWorkers().then(() => this.form?.load()));
-    this.context.lifecycle.onFocus(() => this.conversation?.focus());
+    this.context.lifecycle.onFocus(() => {
+      this.conversation?.focus();
+      this.markSeen();
+    });
+    const seen = window.setInterval(() => this.markSeen(), SEEN_MILLISECONDS / 3);
     this.context.lifecycle.onUnmount(() => {
+      window.clearInterval(seen);
       this.conversation?.dispose();
       this.flushDrafts();
     });
@@ -105,6 +110,12 @@ export class ChatApp {
     if (this.selection === null && this.layout === 'desktop') this.selection = this.firstChat() ?? { kind: 'new' };
     await this.readOpenRequest();
     this.drawAll();
+  }
+
+  // While this view shows a chat to the person, its finished turns need no notification.
+  private markSeen(): void {
+    if (this.selection?.kind !== 'chat' || !this.context.lifecycle.isFocused() || document.visibilityState === 'hidden') return;
+    void this.context.store.putJson({ key: seenKey(this.selection.id), value: { at: Date.now() } });
   }
 
   private firstChat(): Selection {
@@ -184,6 +195,7 @@ export class ChatApp {
     const same = JSON.stringify(selection) === JSON.stringify(this.selection);
     this.selection = selection;
     this.context.surfacePreferences.set('selection', selection);
+    this.markSeen();
     if (!this.loaded) return;
     if (!same || !this.conversation && !this.form) this.drawAll();
     if (selection?.kind === 'new') this.form?.focus();

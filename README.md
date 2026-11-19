@@ -35,6 +35,10 @@ chats beside the open one; on a handheld panel, the list or one chat at a time.
 - **Other sessions**, such as an agent's sub-agents, are listed too, to watch
   and prompt.
 
+When a turn ends while no view shows its chat, Chat raises a notification:
+the agent waits on you. A chat starts its agent in the background, so a slow
+launch shows as Starting, and one that does not start says why.
+
 Chat's sessions are public, so the Sessions view, agents and other
 Applications see them. Everything Chat keeps is in its store under `chats/`,
 the same on every surface.
@@ -93,13 +97,13 @@ its stylesheet and Behaviors, as a view frame holds them; without them the
 browser tests fail rather than skip. Set `CHAT_SCREENSHOTS` to a directory to
 keep screenshots of the views.
 
-To see it in Frontier's Electron app, from a Frontier checkout:
+To see it in Frontier's Electron application, from a Frontier checkout:
 
 ```sh
 bash modcon/scripts/tool.sh ui --remake --applications <a directory holding this repository and a Runtime>
 ```
 
-The app's build carries the committed `HEAD` of each Application in that
+Its build carries the committed `HEAD` of each Application in that
 directory as an Initial Application. A Runtime Application (Claude Code or
 OpenCode, with its CLI on the worker) is needed for an agent to answer.
 

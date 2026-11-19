@@ -14,8 +14,10 @@ import {
   type CreateChatOutput,
   type PromptChatOutput,
   type WorkspaceChoice,
+  SEEN_MILLISECONDS,
   chatKey,
   newId,
+  seenKey,
   titleFrom,
 } from '../shared.ts';
 import { failure, text } from '../text.ts';
@@ -140,7 +142,42 @@ async function startSession(context: MethodCallContext, chat: ChatRecord, revisi
   return failure(t(context, 'error.busy_chat'), true);
 }
 
+// The turns a chat's agent was sent, followed to their end, so the person hears of one that ends while no view
+// shows the chat: the agent then waits on them.
+const followed = new Map<string, { unsubscribe(): void }>();
+
+function followTurns(context: MethodCallContext, chatId: string, session: Session): void {
+  const key = `${chatId} ${session.id}`;
+  if (followed.has(key)) return;
+  const subscription = session.watchTurns((event) => {
+    if (event.type !== 'turn.finished') return;
+    void notifyFinished(context, chatId, event.stopReason, event.error);
+  });
+  followed.set(key, subscription);
+}
+
+function unfollow(chatId: string, sessionId: string | null): void {
+  if (sessionId === null) return;
+  followed.get(`${chatId} ${sessionId}`)?.unsubscribe();
+  followed.delete(`${chatId} ${sessionId}`);
+}
+
+async function notifyFinished(context: MethodCallContext, chatId: string, stopReason: string | null, error: string | null): Promise<void> {
+  const seen = await context.store.getJson<{ at: number }>(seenKey(chatId));
+  if (seen.ok && seen.value && Date.now() - seen.value.at < SEEN_MILLISECONDS) return;
+  const loaded = await loadChat(context, chatId);
+  if ('ok' in loaded) return;
+  const done = stopReason === 'end_turn';
+  const created = await context.notifications.create({
+    title: t(context, done ? 'notify.finished' : 'notify.stopped', { title: loaded.chat.title }),
+    body: error ?? t(context, done ? 'notify.finished_body' : 'notify.stopped_body'),
+    priority: 'normal',
+  });
+  if (!created.ok) void context.logger.warn('A finished turn was not notified', { chatId, reason: created.message });
+}
+
 async function send(context: MethodCallContext, chat: ChatRecord, session: Session, prompt: ChatPrompt): Promise<Answer<PromptChatOutput>> {
+  followTurns(context, chat.id, session);
   const receipt = await session.prompt({ prompt });
   if (!receipt.ok) return receipt;
   await update(context, chat.id, (current) => ({
@@ -351,6 +388,7 @@ export async function releaseChat(context: MethodCallContext, input: Record<stri
   if ('ok' in loaded) return loaded;
   const chat = loaded.chat;
   let agentSessionId = chat.agentSessionId;
+  unfollow(chat.id, chat.sessionId);
   if (chat.sessionId !== null) {
     const live = await sessionOf(context, chat);
     if (live && live.ok) agentSessionId = agentSessionOf(live.value, agentSessionId);

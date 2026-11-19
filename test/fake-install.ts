@@ -231,6 +231,7 @@ export interface FakeRuntime {
 export class FakeInstall {
   // How long sessions.create takes, as launching a real agent does.
   createDelay = 0;
+  notified: { title: string; body?: string; priority: string }[] = [];
   readonly store = new FakeStore();
   readonly sessionMap = new Map<string, FakeSession>();
   runtimes: FakeRuntime[] = [];
@@ -291,6 +292,7 @@ export class FakeInstall {
       translate: (token: string) => translations[token] ?? token,
       store: this.store,
       logger: { debug: async () => {}, info: async () => {}, warn: async () => {}, error: async () => {} },
+      notifications: { create: async (notification: { title: string; body?: string; priority: string }) => { install.notified.push(notification); return ok({ id: `notification-${install.notified.length}` }); } },
       sessions: {
         async create(options: SessionCreateOptions) {
           install.createOptions.push(options);
