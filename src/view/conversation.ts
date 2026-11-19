@@ -42,8 +42,13 @@ export interface ConversationHost extends RenderEnvironment {
   draft(key: string): string;
   saveDraft(key: string, text: string): void;
   promptName(title: string, value: string): Promise<string | null>;
+  // Whether a chat fills the view's width or keeps a reading column, as this Surface last chose.
+  width(): Width;
+  setWidth(width: Width): void;
   confirm(title: string, message: string, label: string): Promise<boolean>;
 }
+
+export type Width = 'column' | 'fill';
 
 type Notice = { tone: 'info' | 'warning' | 'danger'; title: string; text: string; action?: { label: string; run: () => void } } | null;
 
@@ -133,6 +138,7 @@ export class Conversation {
         this.composer,
       ),
     );
+    this.element.dataset.width = host.width();
     this.scroller.append(this.transcript);
     this.transcript.append(this.typing, this.jump);
     this.wire();
@@ -385,7 +391,8 @@ export class Conversation {
     } else {
       this.usageSlot.replaceChildren();
     }
-    const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', this.handle.remove ? 'remove' : ''].filter(Boolean);
+    const width = this.host.width() === 'fill' ? 'width-column' : 'width-fill';
+    const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', width, this.handle.remove ? 'remove' : ''].filter(Boolean);
     // The menu is drawn again only when its items change, so a redraw never closes it under the person's pointer.
     if (values.join(' ') !== this.menuItems || this.menu === null) {
       this.menuItems = values.join(' ');
@@ -401,8 +408,10 @@ export class Conversation {
     const item = (value: string, label: string, tone?: string) => h('li', {}, h('button', { type: 'button', 'data-value': value, 'data-tone': tone }, label));
     for (const value of values) {
       if (value === 'remove') items.push(h('li', {}, h('hr')), item('remove', t('conversation.remove'), 'danger'));
+      else if (value.startsWith('width-')) items.push(h('li', {}, h('hr')), item(value, t(`conversation.${value.replace('-', '_')}`)));
       else items.push(item(value, t(`conversation.${value}`)));
     }
+    if (items[0]?.firstElementChild?.localName === 'hr') items.shift();
     if (items.length > 0) {
       const menu = ds('frontier-menu', {},
         h('button', { type: 'button', 'data-variant': 'ghost' }, t('conversation.more'), icon('down')),
@@ -414,6 +423,7 @@ export class Conversation {
         else if (value === 'release') void this.release();
         else if (value === 'resume') void this.resume();
         else if (value === 'remove') void this.remove();
+        else if (value === 'width-fill' || value === 'width-column') this.setWidth(value === 'width-fill' ? 'fill' : 'column');
       });
       return menu;
     }
@@ -476,6 +486,12 @@ export class Conversation {
       this.reportAction(answer, this.host.t('conversation.model_unavailable'));
     });
     return select;
+  }
+
+  private setWidth(width: Width): void {
+    this.host.setWidth(width);
+    this.element.dataset.width = width;
+    this.drawHeader();
   }
 
   private reportAction(answer: Result<unknown>, unavailableText?: string): void {

@@ -8,7 +8,7 @@ import type {
 } from '../../../application';
 import { type ChatPrompt, type ChatRecord, type PromptChatOutput, SEEN_MILLISECONDS, applicationId, chatKey, openKey, seenKey } from '../shared.ts';
 import { failure, text } from '../text.ts';
-import { type ChatHandle, Conversation, type ConversationHost } from './conversation.ts';
+import { type ChatHandle, Conversation, type ConversationHost, type Width } from './conversation.ts';
 import { ds, h, icon, style } from './dom.ts';
 import { ago } from './format.ts';
 import { NewChatForm, type NewChatDefaults } from './new-chat.ts';
@@ -277,6 +277,8 @@ export class ChatApp {
         window.clearTimeout(this.draftTimer);
         this.draftTimer = window.setTimeout(() => this.flushDrafts(), 500);
       },
+      width: () => (this.context.surfacePreferences.get<Width>('width', 'column') === 'fill' ? 'fill' : 'column'),
+      setWidth: (width) => this.context.surfacePreferences.set('width', width),
       promptName: async (title, value) => {
         const answer = await this.context.modals.prompt({ title, fields: [{ type: 'text', key: 'title', label: this.t('conversation.title_field'), default: value, required: true }], submitLabel: this.t('conversation.rename_submit') });
         return answer.ok && answer.value ? String(answer.value.title ?? '') : null;

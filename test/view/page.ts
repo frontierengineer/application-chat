@@ -61,6 +61,7 @@ function surfaceContext(type: 'workstation' | 'panel'): SurfaceContext & { lifec
 
 Object.assign(window, {
   install,
+  surfacePreferences: { get: (key: string) => preferences.get(key) ?? null },
   clipboard,
   modalAnswers,
   mountView: async (layout: 'desktop' | 'panel') => {

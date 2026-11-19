@@ -54,6 +54,8 @@
     "conversation.starting": "Starting the agent.",
     "conversation.title_field": "Title",
     "conversation.transcript": "Conversation",
+    "conversation.width_column": "Reading width",
+    "conversation.width_fill": "Fill the width",
     "conversation.working": "The agent is working.",
     "error.busy_chat": "Another change to this chat was being saved at the same moment. Try again.",
     "error.chat_id_required": "Name the chat by its id.",

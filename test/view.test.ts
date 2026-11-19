@@ -259,3 +259,30 @@ test('a model setting shows its label, never the runtime\'s own description of i
   assert.equal(await page.getByText('reasoning effort', { exact: false }).count(), 0);
   await page.close();
 });
+
+test('a chat keeps a reading column or fills the width, as the Surface last chose', {}, async () => {
+  const page = await open('desktop', { width: 1600, height: 800 });
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await page.getByLabel('Prompt', { exact: true }).fill('Explain the build');
+  await page.getByLabel('Prompt', { exact: true }).press('Enter');
+  await page.locator('.you').first().waitFor();
+  await page.evaluate("window.stream('The build bundles each Interface on its own.')");
+  await page.evaluate('window.finish()');
+  await page.getByText('The build bundles each Interface on its own.').waitFor();
+  const widths = () => page.evaluate<{ transcript: number; composer: number }>("({ transcript: document.querySelector('.transcript').getBoundingClientRect().width, composer: document.querySelector('.composer').getBoundingClientRect().width })");
+  assert.ok((await widths()).transcript <= 860, 'a reading column at first');
+  await shot(page, 'desktop-width-column');
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('menuitem', { name: 'Fill the width' }).click();
+  await eventually(async () => (await widths()).transcript > 1000 && (await widths()).composer > 1000, 'the transcript and composer to fill the width');
+  assert.equal(await page.evaluate<string>("JSON.stringify(window.surfacePreferences.get('width'))"), '"fill"');
+  await shot(page, 'desktop-width-fill');
+  await page.getByRole('button', { name: 'New chat' }).click();
+  await page.locator('.chat-list button.entry').first().click();
+  await page.getByText('The build bundles each Interface on its own.').waitFor();
+  assert.ok((await widths()).transcript > 1000, 'the choice is remembered');
+  await page.getByRole('button', { name: 'More' }).click();
+  await page.getByRole('menuitem', { name: 'Reading width' }).click();
+  await eventually(async () => (await widths()).transcript <= 860, 'the reading column again');
+  await page.close();
+});
