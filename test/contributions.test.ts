@@ -31,6 +31,10 @@ test('the id, title and color are what the interface allows', () => {
   assert.ok(contributions.title.length > 0);
 });
 
+test('Chat depends on no Application: the runtimes and workspace provisioners it offers are whichever the install has', () => {
+  assert.equal(contributions.dependencies, undefined);
+});
+
 test('every bundle implements exactly what the contributions declare', async () => {
   const surface = await bundle('surface');
   const host = await bundle('host');
