@@ -31,6 +31,15 @@ test('the id, title and color are what the interface allows', () => {
   assert.ok(contributions.title.length > 0);
 });
 
+test('each panel has a title and an icon of its own, so a person tells them apart where they pick one', () => {
+  const panels = contributions.surface?.panels ?? [];
+  const titles = panels.map((panel) => panel.title.trim().toLowerCase());
+  assert.equal(new Set(titles).size, titles.length, `panel titles repeat: ${titles.join(', ')}`);
+  const icons = panels.map((panel) => JSON.stringify(panel.icon ?? []));
+  assert.equal(new Set(icons).size, icons.length, 'two panels share an icon');
+  assert.deepEqual(panels.map((panel) => panel.title), ['Chats', 'Chat', 'Compact chat']);
+});
+
 test('Chat depends on no Application: the runtimes and workspace provisioners it offers are whichever the installation has', () => {
   assert.equal(contributions.dependencies, undefined);
 });

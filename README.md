@@ -13,7 +13,7 @@ composer; it needs a keyboard and at least 420 by 360 pixels. A chat chosen in
 Chats is shown in the Chat panel of the same deck, the one already on it if
 there is one, else one is placed there. A Chat panel keeps its values true to
 what it shows, the chat or a session no chat runs, so the deck keeps it and
-Chats marks it, deck by deck. **Chat, one at a time** shows the list or one chat, with
+Chats marks it, deck by deck. **Compact chat** shows the list or one chat, with
 targets sized for a finger; it fits 320 by 400 and works by touch. A Chat
 panel can be set, in its deck, to open on one chat, and the actions bring
 whichever the deck shown holds forward.

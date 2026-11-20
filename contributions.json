@@ -28,9 +28,18 @@
       },
       {
         "id": "chat-compact",
-        "title": "Chat, one at a time",
+        "title": "Compact chat",
         "description": "Your chats with agents, the list or one chat at a time, sized for a hand.",
-        "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
+        "icon": [
+          {
+            "d": "M8 3h8a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z",
+            "kind": "outline"
+          },
+          {
+            "d": "M11 18h2",
+            "kind": "outline"
+          }
+        ],
         "minWidth": 320,
         "minHeight": 400,
         "fields": [
