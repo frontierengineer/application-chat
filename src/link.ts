@@ -1,76 +1,69 @@
-import type { Panels, Result, Subscription, SurfaceContext } from '../../application';
-import { openKey, shownKey } from './shared.ts';
+import type { DeckPanel, FieldValues, OpenOptions, PanelContext, Result, Subscription, SurfaceContext } from '../../application';
 
 // What a Chat panel shows: a new chat's form, a chat by its id, or another session as `session:` and its id.
 export type Target = string;
 
-// How Chat's panels tell each other what to show: the Chats panel, and an action, ask a Chat panel to open a
-// chat and bring it forward; the Chat panel says what it shows, so the Chats panel marks it.
-export interface PanelLink {
-  open(target: Target): Promise<Result>;
-  onOpen(handler: (target: Target) => void): Subscription;
-  // The request made before this panel listened, taken once.
-  pending(): Promise<Target | null>;
-  shown(target: Target | null): void;
-  onShown(handler: (target: Target | null) => void): Subscription;
-  current(): Promise<Target | null>;
+// A new chat's form has no field of the Chat panel to carry it, so the ask is the Deck's state, heard by the
+// Chat panels there and read once by one mounted just after.
+const ASKED = 'open';
+const ASK_HOLDS_MILLISECONDS = 15_000;
+
+function valuesOf(target: Target): FieldValues {
+  if (target === 'new') return {};
+  if (target.startsWith('session:')) return { sessionId: target.slice('session:'.length) };
+  return { chat: target };
 }
 
-// The Shell's way for a panel to open another in the Deck shown, where the platform has it: open hands the
-// values to an instance of the panel, reusing one or placing one. Without it, a request goes through Chat's
-// store and panels.reveal. What a Chat panel shows is always told through Chat's store.
-interface DeckPanels {
-  show?(panelId: string, values?: Record<string, string | number | boolean>): Promise<Result>;
-  open?(request: { panelId: string; values?: Record<string, unknown>; mode?: 'reuse' | 'new'; key?: string }): Promise<Result>;
+// The Chat panel's fields as they name what it shows: a chat, or a session no chat runs, or neither.
+export function fieldsOf(target: Target | null): FieldValues {
+  if (target === null || target === 'new') return { chat: '', sessionId: '' };
+  if (target.startsWith('session:')) return { chat: '', sessionId: target.slice('session:'.length) };
+  return { chat: target, sessionId: '' };
 }
 
-const isChat = (target: Target): boolean => target !== 'new' && !target.startsWith('session:');
+// What a Chat panel in the Deck shows, read from its fields.
+export function targetOfFields(values: FieldValues): Target | null {
+  if (typeof values.chat === 'string' && values.chat !== '') return values.chat;
+  if (typeof values.sessionId === 'string' && values.sessionId !== '') return `session:${values.sessionId}`;
+  return null;
+}
 
-export function panelLink(context: SurfaceContext): PanelLink {
-  const panels = context.panels as Panels & DeckPanels;
-  const opening = openKey(context.currentSurface.id);
-  const showing = shownKey(context.currentSurface.id);
-  const take = async (): Promise<Target | null> => {
-    const request = await context.store.getJson<{ target: Target }>(opening);
-    if (!request.ok || request.value === null) return null;
-    await context.store.delete(opening);
-    return request.value.target;
+// From the Chats panel or an action: shows the target in a Chat panel of the Deck, the one already on it when
+// there is one; on a Surface that places no panel by itself, in the compact panel the Deck holds.
+export async function openInChat(context: SurfaceContext, target: Target): Promise<Result> {
+  if (target === 'new') {
+    const asked = await context.deck.state.set(ASKED, { target, at: Date.now() });
+    if (!asked.ok) return asked;
+  }
+  const options: OpenOptions = target === 'new' ? {} : { key: target };
+  const shown = await context.panels.show('chat', valuesOf(target), options);
+  if (shown.ok || !shown.unavailable) return shown;
+  return context.panels.show('chat-compact', valuesOf(target), options);
+}
+
+// In a Chat panel: a new chat's form asked for by another of Chat's panels in the Deck, now or just before it mounted.
+export function onAskedNew(context: PanelContext, handler: () => void): Subscription {
+  const heard = (value: unknown): boolean => {
+    const ask = value as { target?: unknown; at?: unknown } | null;
+    return ask !== null && typeof ask === 'object' && ask.target === 'new' && typeof ask.at === 'number' && Date.now() - ask.at < ASK_HOLDS_MILLISECONDS;
   };
-  return {
-    async open(target) {
-      // A chat is the Chat panel's own field, so the Shell shows it in the panel already on it, or reuses one.
-      if (panels.show && isChat(target)) return panels.show('chat', { chat: target });
-      if (panels.open && isChat(target)) return panels.open({ panelId: 'chat', values: { chat: target }, mode: 'reuse', key: target });
-      const written = await context.store.putJson({ key: opening, value: { target, at: Date.now() } });
-      if (!written.ok) return written;
-      if (panels.open) return panels.open({ panelId: 'chat', mode: 'reuse' });
-      const one = await panels.reveal('chat');
-      if (one.ok || !one.unavailable) return one;
-      return panels.reveal('chat-compact');
-    },
-    onOpen(handler) {
-      return context.store.watch('open/', (change) => {
-        if (change.kind !== 'written' || change.key !== opening) return;
-        void take().then((target) => {
-          if (target !== null) handler(target);
-        });
-      });
-    },
-    pending: take,
-    shown(target) {
-      void context.store.putJson({ key: showing, value: { target } });
-    },
-    onShown(handler) {
-      return context.store.watch('shown/', (change) => {
-        if (change.key !== showing) return;
-        void context.store.getJson<{ target: Target | null }>(showing).then((shown) => {
-          if (shown.ok) handler(shown.value?.target ?? null);
-        });
-      });
-    },
-    async current() {
-      const shown = await context.store.getJson<{ target: Target | null }>(showing);
-      return shown.ok ? shown.value?.target ?? null : null;
-    },
+  void context.deck.state.get(ASKED).then((asked) => {
+    if (asked.ok && heard(asked.value)) handler();
+  });
+  return context.deck.state.watch(ASKED, (value) => {
+    if (heard(value)) handler();
+  });
+}
+
+// In the Chats panel: what the Chat panels of this Deck show, the one in front of its stack first.
+export function onChatShown(context: PanelContext, handler: (target: Target | null) => void): Subscription {
+  const pick = (panels: readonly DeckPanel[]): Target | null => {
+    const chats = panels.filter((panel) => panel.panelId === 'chat');
+    const shown = chats.find((panel) => panel.front) ?? chats[0];
+    return shown === undefined ? null : targetOfFields(shown.values);
   };
+  void context.panels.inDeck().then((panels) => {
+    if (panels.ok) handler(pick(panels.value));
+  });
+  return context.panels.onChange((panels) => handler(pick(panels)));
 }

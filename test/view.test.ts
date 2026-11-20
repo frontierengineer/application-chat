@@ -368,8 +368,8 @@ test('a chat chosen in the Chats panel opens in the Chat panel beside it, which 
   await page.close();
 });
 
-test('where the Shell lets a panel open another in a Deck, Chats opens a chat in the Chat panel by its field, and marks what it shows', {}, async () => {
-  const page = await open('deck', undefined, 'window.deck.on = true');
+test('Chats shows a chat in the Chat panel of its Deck by that panel\'s own field, the Chat panel keeps its fields true to what it shows, and Chats marks what they name', {}, async () => {
+  const page = await open('deck');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   for (const prompt of ['Fix the flaky login test', 'Explain the build']) {
     await page.getByLabel('Prompt', { exact: true }).fill(prompt);
@@ -379,17 +379,26 @@ test('where the Shell lets a panel open another in a Deck, Chats opens a chat in
     await page.locator('.list-pane').getByRole('button', { name: 'New chat' }).click();
     await page.getByRole('heading', { name: 'New chat' }).waitFor();
   }
+  const chatIdOf = (title: string) => page.evaluate<string>(`(async () => { for (const key of (await window.install.store.list('chats/')).value) { const chat = (await window.install.store.getJson(key)).value; if (chat.title === ${JSON.stringify(title)}) return chat.id; } return ''; })()`);
+  const fields = () => page.evaluate<Record<string, unknown>>("window.deck.instances.find((instance) => instance.panelId === 'chat').values");
+  assert.deepEqual(await fields(), { chat: '', sessionId: '' }, 'on a new chat\'s form the Chat panel names no chat');
   const entries = page.locator('.chat-list button.entry');
   await entries.nth(1).click();
   await page.locator('.conversation-header h2', { hasText: 'Fix the flaky login test' }).waitFor();
-  const opened = await page.evaluate<{ panelId: string; values?: Record<string, unknown>; mode?: string; key?: string }[]>('window.deck.opened');
-  const chatId = await page.evaluate<string>("(async () => { const keys = (await window.install.store.list('chats/')).value; for (const key of keys) { const chat = (await window.install.store.getJson(key)).value; if (chat.title === 'Fix the flaky login test') return chat.id; } return ''; })()");
-  assert.deepEqual(opened.at(-1), { panelId: 'chat', values: { chat: chatId }, mode: 'reuse', key: chatId }, 'a chat opens by the Chat panel\'s own field, reusing the panel on it');
-  await eventually(async () => (await entries.nth(1).getAttribute('aria-current')) === 'true', 'the list to mark the chat the Chat panel shows');
-  const sessionId = await page.evaluate<string>("(async () => (await window.install.store.getJson('chats/' + " + JSON.stringify(chatId) + ")).value.sessionId)()");
+  const login = await chatIdOf('Fix the flaky login test');
+  const shown = await page.evaluate<{ panelId: string; values: Record<string, unknown>; options: Record<string, unknown> }[]>('window.deck.shown');
+  assert.deepEqual(shown.at(-1), { panelId: 'chat', values: { chat: login }, options: { key: login } }, 'a chat is shown by the Chat panel\'s own field, keyed by the chat');
+  await eventually(async () => (await entries.nth(1).getAttribute('aria-current')) === 'true', 'Chats to mark the chat the Chat panel names');
+  await page.locator('main').getByRole('button', { name: 'New chat' }).click();
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  await eventually(async () => JSON.stringify(await fields()) === JSON.stringify({ chat: '', sessionId: '' }) && (await page.locator('.chat-list button.entry[aria-current="true"]').count()) === 0, 'the Chat panel to clear its fields on a new chat, and Chats to mark none');
   await entries.nth(0).click();
   await page.locator('.conversation-header h2', { hasText: 'Explain the build' }).waitFor();
-  await page.evaluate(`window.setPanelValues({ sessionId: ${JSON.stringify(sessionId)} })`);
+  const sessionId = await page.evaluate<string>(`(async () => (await window.install.store.getJson('chats/' + ${JSON.stringify(login)})).value.sessionId)()`);
+  await page.evaluate(`window.setPanelValues({ chat: '', sessionId: ${JSON.stringify(sessionId)} })`);
   await page.locator('.conversation-header h2', { hasText: 'Fix the flaky login test' }).waitFor();
+  await eventually(async () => JSON.stringify(await fields()) === JSON.stringify({ chat: login, sessionId: '' }), 'a session opened by its id to show as the chat that runs it, named so in the fields');
+  await page.locator('.list-pane').getByRole('button', { name: 'New chat' }).click();
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.close();
 });

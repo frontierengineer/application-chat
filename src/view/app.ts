@@ -6,7 +6,7 @@ import type {
   Session,
   Worker,
 } from '../../../application';
-import { type PanelLink, type Target, panelLink } from '../link.ts';
+import { type Target, fieldsOf, onAskedNew, onChatShown, openInChat, targetOfFields } from '../link.ts';
 import { type ChatPrompt, type ChatRecord, type PromptChatOutput, SEEN_MILLISECONDS, applicationId, chatKey, seenKey } from '../shared.ts';
 import { failure, text } from '../text.ts';
 import { type ChatHandle, Conversation, type ConversationHost, type Width } from './conversation.ts';
@@ -39,12 +39,10 @@ export class ChatApp {
   private runtimesAsked = 0;
   private drafts: Record<string, string>;
   private draftTimer = 0;
-  private readonly link: PanelLink;
 
   constructor(context: PanelContext, layout: Layout) {
     this.context = context;
     this.layout = layout;
-    this.link = panelLink(context);
     this.drafts = context.surfacePreferences.get<Record<string, string>>('drafts', {});
     const t = this.t;
     const search = h('input', { type: 'search', placeholder: t('list.search'), 'aria-label': t('list.search') });
@@ -86,13 +84,14 @@ export class ChatApp {
       }
     });
     this.context.store.watch('chats/', (change) => void this.reloadChat(change.key, change.kind));
+    // The Chats panel marks what a Chat panel of its Deck shows; a Chat panel opens a new chat's form when asked.
     if (this.layout === 'list') {
-      this.link.onShown((target) => {
+      onChatShown(this.context, (target) => {
         this.selection = selectionOf(target);
-        this.drawList();
+        if (this.loaded) this.drawList();
       });
     } else {
-      this.link.onOpen((target) => void this.openTarget(target));
+      onAskedNew(this.context, () => this.select({ kind: 'new' }));
     }
     this.context.sessions.onChanged((change) => void this.reloadSession(change.id, change.kind));
     this.context.runtimes.onChanged(() => void this.reloadRuntimes().then(() => this.form?.load()));
@@ -110,7 +109,6 @@ export class ChatApp {
     await Promise.all([this.loadChats(), this.loadSessions(), this.reloadRuntimes(), this.reloadWorkers()]);
     this.loaded = true;
     if (this.layout === 'list') {
-      this.selection = selectionOf(await this.link.current());
       this.drawAll();
       return;
     }
@@ -119,12 +117,7 @@ export class ChatApp {
     const followed = this.followed(this.context.instance.values());
     if (followed !== null) this.selection = followed;
     if (this.selection === null && this.layout === 'conversation') this.selection = this.firstChat() ?? { kind: 'new' };
-    this.context.instance.onValuesChanged((values) => {
-      const shown = this.followed(values);
-      if (shown !== null) this.select(shown);
-    });
-    const asked = await this.link.pending();
-    if (asked !== null) await this.openTarget(asked, false);
+    this.context.instance.onValuesChanged((values) => void this.openTarget(targetOfFields(values)));
     this.drawAll();
     this.announce();
   }
@@ -198,18 +191,24 @@ export class ChatApp {
     this.queueRedraw();
   }
 
-  // A chat the Chats panel or an action asked this panel to show.
-  private async openTarget(target: Target, draw = true): Promise<void> {
+  // What the Chats panel, an action or another Application asked this panel to show, through its fields: a chat
+  // made a moment ago is read before it is shown.
+  private async openTarget(target: Target | null): Promise<void> {
+    if (target === null) return;
     const selection = selectionOf(target);
     if (selection?.kind === 'chat' && !this.chats.has(selection.id)) await this.reloadChat(chatKey(selection.id), 'written', false);
     if (selection?.kind === 'session' && !this.sessions.has(selection.id)) await this.reloadSession(selection.id, 'added');
-    if (draw) this.select(selection);
-    else this.selection = selection;
+    const shown = this.followed(fieldsOf(target));
+    if (shown !== null) this.select(shown);
   }
 
-  // What this panel shows, for the Chats panel on the Surface to mark.
+  // What this panel shows is kept in its own fields, so the Chats panel of its Deck marks it and the Deck keeps it.
   private announce(): void {
-    if (this.layout !== 'list') this.link.shown(targetOf(this.selection));
+    if (this.layout === 'list') return;
+    const fields = fieldsOf(targetOf(this.selection));
+    const values = this.context.instance.values();
+    if ((values.chat ?? '') === fields.chat && (values.sessionId ?? '') === fields.sessionId) return;
+    void this.context.panel.setValues(fields);
   }
 
   private queueRedraw(): void {
@@ -227,7 +226,7 @@ export class ChatApp {
     if (this.layout === 'list') {
       this.selection = selection;
       this.drawList();
-      void this.link.open(targetOf(selection) ?? 'new');
+      void openInChat(this.context, targetOf(selection) ?? 'new');
       return;
     }
     const same = JSON.stringify(selection) === JSON.stringify(this.selection);

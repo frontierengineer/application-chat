@@ -78,16 +78,6 @@ export function seenKey(chatId: string): string {
 // How long a view's mark that it shows a chat holds; a view writes it again well within this.
 export const SEEN_MILLISECONDS = 30_000;
 
-// A request to a Chat panel on the Surface to show a chat, taken once by the panel that shows it.
-export function openKey(surfaceId: string): string {
-  return `open/${surfaceId.replace(/[^A-Za-z0-9._-]/g, '-')}`;
-}
-
-// What a Chat panel on the Surface shows, so the Chats panel there marks it.
-export function shownKey(surfaceId: string): string {
-  return `shown/${surfaceId.replace(/[^A-Za-z0-9._-]/g, '-')}`;
-}
-
 export function promptText(prompt: ChatPrompt): string {
   if (typeof prompt === 'string') return prompt;
   return prompt.map((part) => (part.type === 'text' ? part.text : '')).join('\n').trim();

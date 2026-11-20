@@ -10,11 +10,15 @@ Chat contributes three **panels** a person places in a deck. **Chats** lists
 the chats and the other public sessions, to find one by its words and start a
 new one; it fits 240 by 320. **Chat** shows one chat, its conversation and
 composer; it needs a keyboard and at least 420 by 360 pixels. A chat chosen in
-Chats opens in the Chat panel on that Surface, and the Chat panel says what it
-shows, so Chats marks it. **Chat, one at a time** shows the list or one chat,
-with targets sized for a finger; it fits 320 by 400 and works by touch. A Chat
+Chats is shown in the Chat panel of the same deck, the one already on it if
+there is one, else one is placed there. A Chat panel keeps its values true to
+what it shows, the chat or a session no chat runs, so the deck keeps it and
+Chats marks it, deck by deck. **Chat, one at a time** shows the list or one chat, with
+targets sized for a finger; it fits 320 by 400 and works by touch. A Chat
 panel can be set, in its deck, to open on one chat, and the actions bring
 whichever the deck shown holds forward.
+
+The **Chats + Conversation** deck preset places Chats beside Chat.
 
 - **Starting a chat** takes one prompt. Chat picks a runtime that is ready on a
   connected worker, remembering the last choice on each surface. Options choose

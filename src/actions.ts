@@ -1,10 +1,10 @@
 import type { ActionContext, Failure, OptionSourceContext, SelectChoice, Unavailable } from '../../application';
-import { panelLink } from './link.ts';
+import { openInChat } from './link.ts';
 import { type ChatRecord, type CreateChatOutput, applicationId } from './shared.ts';
 import { failure, text } from './text.ts';
 
 async function show(context: ActionContext, target: string): Promise<void | Failure | Unavailable> {
-  const shown = await panelLink(context).open(target);
+  const shown = await openInChat(context, target);
   if (!shown.ok && !shown.unavailable) return shown;
 }
 

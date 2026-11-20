@@ -33,7 +33,9 @@
         "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
         "minWidth": 320,
         "minHeight": 400,
-        "fields": [{ "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }]
+        "fields": [
+          { "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }
+        ]
       }
     ],
     "actions": [

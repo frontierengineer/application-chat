@@ -31,23 +31,29 @@ function live(): { session: FakeSession; turnId: string } | undefined {
 const preferences = new Map<string, unknown>();
 const clipboard: string[] = [];
 const modalAnswers: unknown[] = [];
-const valueHandlers: ((values: Record<string, unknown>) => void)[] = [];
-// The Shell's Deck panels, when a test asks for them: open hands the values to the Chat panel.
-const deck = { on: false, opened: [] as unknown[] };
-function deckPanels(): Record<string, unknown> {
-  const ok = { ok: true as const, value: undefined };
-  if (!deck.on) return {};
-  return {
-    open: async (request: { panelId: string; values?: Record<string, unknown> }) => {
-      deck.opened.push(request);
-      if (request.values) for (const handler of valueHandlers) handler(request.values);
-      return ok;
-    },
-  };
-}
+// The Shell's Deck, as a panel of Chat sees it: its panel instances with their fields' values, show and
+// setValues merging values into them, the Deck's state shared among them, and onChange told of every change.
+type Values = Record<string, unknown>;
+interface Instance { instanceId: string; panelId: string; values: Values; front: boolean; heard: ((values: Values) => void)[] }
+const deck = {
+  instances: [] as Instance[],
+  shown: [] as { panelId: string; values: Values; options: Values }[],
+  state: new Map<string, unknown>(),
+  stateWatchers: [] as { instanceId: string; key: string; handler: (value: unknown) => void }[],
+  changeWatchers: [] as ((panels: unknown[]) => void)[],
+};
+const listed = () => deck.instances.map(({ instanceId, panelId, values, front }) => ({ instanceId, panelId, values: { ...values }, front }));
+const changed = () => { const panels = listed(); for (const watcher of deck.changeWatchers) watcher(panels); };
+const give = (instance: Instance, values: Values) => {
+  instance.values = { ...instance.values, ...values };
+  changed();
+  for (const handler of instance.heard) handler({ ...instance.values });
+};
 
-function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: Record<string, unknown> = {}): SurfaceContext & { lifecycle: unknown } {
+function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: Values = {}): SurfaceContext & { lifecycle: unknown } {
   const ok = { ok: true as const, value: undefined };
+  const self: Instance = { instanceId: `instance-${panelId}`, panelId, values: { ...values }, front: true, heard: [] };
+  deck.instances.push(self);
   return {
     ...install.context(translations.en),
     currentSurface: { id: 'surface-1', title: () => 'Work laptop', type, language: () => 'en-US', inputs: () => (type === 'touch' ? ['touch'] : ['pointer', 'keyboard']) },
@@ -58,8 +64,34 @@ function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: 
     },
     clipboard: { copy: async (text: string) => { clipboard.push(text); return ok; } },
     cursor: { insertText: async () => ok },
-    panels: { reveal: async () => ok, update: async () => ok, ...deckPanels() },
-    instance: { panelId, instanceId: `instance-${panelId}`, values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
+    panels: {
+      update: async () => ok,
+      show: async (shownId: string, given: Values = {}, options: Values = {}) => {
+        deck.shown.push({ panelId: shownId, values: given, options });
+        const target = deck.instances.find((instance) => instance.panelId === shownId);
+        if (!target) return { ok: false, unavailable: true, message: 'No such panel in the deck.' };
+        give(target, given);
+        return ok;
+      },
+      open: async () => ({ ok: false, unavailable: true, message: 'Nothing opens that here.' }),
+      inDeck: async () => ({ ok: true, value: listed() }),
+      onChange: (handler: (panels: unknown[]) => void) => { deck.changeWatchers.push(handler); return { unsubscribe() {} }; },
+    },
+    panel: { setValues: async (given: Values) => { self.values = { ...self.values, ...given }; changed(); return ok; } },
+    deck: {
+      state: {
+        get: async (key: string) => ({ ok: true, value: deck.state.get(key) ?? null }),
+        set: async (key: string, value: unknown) => {
+          deck.state.set(key, structuredClone(value));
+          for (const watcher of deck.stateWatchers) if (watcher.key === key && watcher.instanceId !== self.instanceId) watcher.handler(structuredClone(value));
+          return ok;
+        },
+        watch: (key: string, handler: (value: unknown) => void) => { deck.stateWatchers.push({ instanceId: self.instanceId, key, handler }); return { unsubscribe() {} }; },
+      },
+      publish: async () => ok,
+      subscribe: () => ({ unsubscribe() {} }),
+    },
+    instance: { panelId, instanceId: self.instanceId, values: () => ({ ...self.values }), onValuesChanged: (handler: (values: Values) => void) => { self.heard.push(handler); return { unsubscribe() {} }; } },
     badges: { update: async () => ok },
     modals: {
       open: async () => ok,
@@ -80,7 +112,8 @@ Object.assign(window, {
   clipboard,
   modalAnswers,
   deck,
-  setPanelValues: (values: Record<string, unknown>) => { for (const handler of valueHandlers) handler(values); },
+  // A person or another Application setting the Chat panel's fields in the Deck.
+  setPanelValues: (values: Values) => { const target = deck.instances.find((instance) => instance.panelId !== 'chats'); if (target) give(target, values); },
   // A deck holding the Chats panel beside a Chat panel on one Surface, each its own view; or the compact panel alone.
   mountView: async (layout: 'deck' | 'compact', values: Record<string, unknown> = {}) => {
     if (layout === 'compact') {
