@@ -1,5 +1,5 @@
 import type {
-  FieldValues,
+  PanelValues,
   PanelContext,
   Result,
   Runtime,
@@ -124,7 +124,7 @@ export class ChatApp {
 
   // What this Panel Instance follows, as set in its deck or opened by another panel: a chat Chat has, or a
   // session, shown as the chat that runs it when there is one.
-  private followed(values: FieldValues): Selection {
+  private followed(values: PanelValues): Selection {
     const chatId = values['chat'];
     if (typeof chatId === 'string' && this.chats.has(chatId)) return { kind: 'chat', id: chatId };
     const sessionId = values['sessionId'];

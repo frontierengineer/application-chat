@@ -1,4 +1,4 @@
-import type { DeckPanel, FieldValues, OpenOptions, PanelContext, Result, Subscription, SurfaceContext } from '../../application';
+import type { DeckPanel, OpenOptions, PanelContext, PanelValues, Result, Subscription, SurfaceContext } from '../../application';
 
 // What a Chat panel shows: a new chat's form, a chat by its id, or another session as `session:` and its id.
 export type Target = string;
@@ -8,21 +8,21 @@ export type Target = string;
 const ASKED = 'open';
 const ASK_HOLDS_MILLISECONDS = 15_000;
 
-function valuesOf(target: Target): FieldValues {
+function valuesOf(target: Target): PanelValues {
   if (target === 'new') return {};
   if (target.startsWith('session:')) return { sessionId: target.slice('session:'.length) };
   return { chat: target };
 }
 
 // The Chat panel's fields as they name what it shows: a chat, or a session no chat runs, or neither.
-export function fieldsOf(target: Target | null): FieldValues {
+export function fieldsOf(target: Target | null): PanelValues {
   if (target === null || target === 'new') return { chat: '', sessionId: '' };
   if (target.startsWith('session:')) return { chat: '', sessionId: target.slice('session:'.length) };
   return { chat: target, sessionId: '' };
 }
 
 // What a Chat panel in the Deck shows, read from its fields.
-export function targetOfFields(values: FieldValues): Target | null {
+export function targetOfFields(values: PanelValues): Target | null {
   if (typeof values.chat === 'string' && values.chat !== '') return values.chat;
   if (typeof values.sessionId === 'string' && values.sessionId !== '') return `session:${values.sessionId}`;
   return null;
