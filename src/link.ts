@@ -20,6 +20,7 @@ export interface PanelLink {
 // values to an instance of the panel, reusing one or placing one. Without it, a request goes through Chat's
 // store and panels.reveal. What a Chat panel shows is always told through Chat's store.
 interface DeckPanels {
+  show?(panelId: string, values?: Record<string, string | number | boolean>): Promise<Result>;
   open?(request: { panelId: string; values?: Record<string, unknown>; mode?: 'reuse' | 'new'; key?: string }): Promise<Result>;
 }
 
@@ -38,6 +39,7 @@ export function panelLink(context: SurfaceContext): PanelLink {
   return {
     async open(target) {
       // A chat is the Chat panel's own field, so the Shell shows it in the panel already on it, or reuses one.
+      if (panels.show && isChat(target)) return panels.show('chat', { chat: target });
       if (panels.open && isChat(target)) return panels.open({ panelId: 'chat', values: { chat: target }, mode: 'reuse', key: target });
       const written = await context.store.putJson({ key: opening, value: { target, at: Date.now() } });
       if (!written.ok) return written;
