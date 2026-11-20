@@ -4,7 +4,8 @@ import { mountChat } from './src/view/app.ts';
 
 export const registration = {
   panels: {
-    chat: { mount: (context) => mountChat(context, 'wide') },
+    chats: { mount: (context) => mountChat(context, 'list') },
+    chat: { mount: (context) => mountChat(context, 'conversation') },
     'chat-compact': { mount: (context) => mountChat(context, 'compact') },
   },
   actions: {

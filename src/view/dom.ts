@@ -24,12 +24,6 @@ function build<E extends HTMLElement>(element: E, attributes: Attributes, childr
   return element;
 }
 
-export function withCode(textValue: string): (Node | string)[] {
-  return textValue.split(/(`[^`]+`)/).filter((part) => part !== '').map((part) =>
-    part.startsWith('`') && part.endsWith('`') ? h('code', {}, part.slice(1, -1)) : part,
-  );
-}
-
 export function style(css: string): HTMLStyleElement {
   return h('style', {}, css);
 }
@@ -45,16 +39,7 @@ export const paths = {
   attach: 'm21 11-8.6 8.6a5.5 5.5 0 0 1-7.8-7.8l8.6-8.6a3.7 3.7 0 0 1 5.2 5.2l-8.6 8.6a1.8 1.8 0 0 1-2.6-2.6L15 7.6',
   back: 'm15 18-6-6 6-6',
   down: 'm6 9 6 6 6-6',
-  read: 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8zM14 3v5h5',
-  edit: 'M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z',
   delete: 'M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3',
-  move: 'm16 3 4 4-4 4M20 7H4M8 21l-4-4 4-4M4 17h16',
-  search: 'M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM21 21l-4.3-4.3',
-  execute: 'm4 17 6-6-6-6M12 19h8',
-  think: 'M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1',
-  fetch: 'M12 3v12m-5-5 5 5 5-5M5 21h14',
-  switch_mode: 'M21 12a9 9 0 1 1-2.6-6.4L21 8M21 3v5h-5',
-  other: 'M12 8v8M8 12h8',
   help: 'M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM9.5 9.5a2.5 2.5 0 1 1 3.4 2.3c-.6.3-.9.8-.9 1.4v.3M12 17h.01',
 } as const;
 

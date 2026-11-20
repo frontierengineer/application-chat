@@ -16,18 +16,6 @@ export function ago(at: number, now: number, language: string): string {
   return new Intl.DateTimeFormat(language, { dateStyle: 'medium' }).format(at);
 }
 
-export function tokens(count: number, language: string): string {
-  return new Intl.NumberFormat(language, { notation: 'compact', maximumFractionDigits: 1 }).format(count);
-}
-
-export function money(amount: number, currency: string, language: string): string {
-  try {
-    return new Intl.NumberFormat(language, { style: 'currency', currency, maximumFractionDigits: amount < 1 ? 3 : 2 }).format(amount);
-  } catch {
-    return `${amount.toFixed(2)} ${currency}`;
-  }
-}
-
 export function bytes(size: number, language: string): string {
   const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte'];
   let value = size;

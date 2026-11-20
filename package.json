@@ -10,8 +10,5 @@
   "scripts": {
     "check": "node scripts/check.mjs",
     "test": "node scripts/check.mjs"
-  },
-  "dependencies": {
-    "marked": "18.2.1"
   }
 }

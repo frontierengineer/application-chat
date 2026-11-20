@@ -15,6 +15,7 @@ install.agent = (session, turnId) => {
 const models: AvailableModel[] = [
   { label: 'Claude Opus', versions: [{ id: 'opus', label: 'Opus 5.5', contextWindow: 200000, settings: [{ type: 'select', key: 'effort', label: 'Effort', description: 'How hard the model thinks before it answers.', choices: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] }] }] },
   { label: 'Claude Sonnet', versions: [{ id: 'sonnet', label: 'Sonnet 5.5', contextWindow: 200000, settings: [] }] },
+  { label: 'DeepSeek', versions: [{ id: 'deepseek-v4-flash', label: 'V4 Flash', contextWindow: 128000, settings: [] }, { id: 'deepseek-v4-flash-thinking', label: 'V4 Flash, thinking', contextWindow: 128000, settings: [] }, { id: 'deepseek-v4-pro', label: 'V4 Pro', contextWindow: 128000, settings: [] }] },
 ];
 install.workers.push({ id: 'w1', title: 'Laptop', connected: true }, { id: 'w2', title: 'Build server', connected: true });
 install.addRuntime('github.com/frontierengineer/application-claude-code', 'Claude Code', ['w1', 'w2'], models);
@@ -32,7 +33,7 @@ const clipboard: string[] = [];
 const modalAnswers: unknown[] = [];
 const valueHandlers: ((values: Record<string, unknown>) => void)[] = [];
 
-function surfaceContext(type: 'workstation' | 'touch', values: Record<string, unknown> = {}): SurfaceContext & { lifecycle: unknown } {
+function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: Record<string, unknown> = {}): SurfaceContext & { lifecycle: unknown } {
   const ok = { ok: true as const, value: undefined };
   return {
     ...install.context(translations.en),
@@ -45,7 +46,7 @@ function surfaceContext(type: 'workstation' | 'touch', values: Record<string, un
     clipboard: { copy: async (text: string) => { clipboard.push(text); return ok; } },
     cursor: { insertText: async () => ok },
     panels: { reveal: async () => ok, update: async () => ok },
-    instance: { panelId: type === 'touch' ? 'chat-compact' : 'chat', instanceId: 'instance-1', values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
+    instance: { panelId, instanceId: `instance-${panelId}`, values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
     badges: { update: async () => ok },
     modals: {
       open: async () => ok,
@@ -66,10 +67,17 @@ Object.assign(window, {
   clipboard,
   modalAnswers,
   setPanelValues: (values: Record<string, unknown>) => { for (const handler of valueHandlers) handler(values); },
-  mountView: async (layout: 'wide' | 'compact', values: Record<string, unknown> = {}) => {
-    const context = surfaceContext(layout === 'wide' ? 'workstation' : 'touch', values);
-    if (layout === 'wide') await surface.panels.chat.mount(context as never);
-    else await surface.panels['chat-compact'].mount(context as never);
+  // A deck holding the Chats panel beside a Chat panel on one Surface, each its own view; or the compact panel alone.
+  mountView: async (layout: 'deck' | 'compact', values: Record<string, unknown> = {}) => {
+    if (layout === 'compact') {
+      await surface.panels['chat-compact'].mount(surfaceContext('touch', 'chat-compact', values) as never);
+      return;
+    }
+    const style = document.createElement('style');
+    style.textContent = 'body { display: grid; grid-template-columns: 300px minmax(0, 1fr); }';
+    document.head.append(style);
+    await surface.panels.chats.mount(surfaceContext('workstation', 'chats') as never);
+    await surface.panels.chat.mount(surfaceContext('workstation', 'chat', values) as never);
   },
   stream: (text: string) => {
     const turn = live();

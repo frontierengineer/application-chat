@@ -12,14 +12,14 @@ import type {
 } from '../../../application';
 import { type CreateChatInput, type CreateChatOutput, applicationId } from '../shared.ts';
 import { ds, fill, h, icon } from './dom.ts';
-import type { RenderEnvironment } from './render-items.ts';
+import type { ViewEnvironment } from './environment.ts';
 
 export interface NewChatDefaults {
   runtimeId?: string;
   workerId?: string;
 }
 
-export interface NewChatHost extends RenderEnvironment {
+export interface NewChatHost extends ViewEnvironment {
   context: SurfaceContext;
   layout: 'wide' | 'compact';
   defaults(): NewChatDefaults;
@@ -51,21 +51,32 @@ function settingInput(field: Field, value: string | number | boolean | undefined
 
 let fieldCounter = 0;
 
-// A field's label, its control, and a hint after it. What a setting is for is behind a question mark beside its
-// label: its words show on hover and, pressed, in a popover beside it, and a screen reader hears them with the field.
-function field(label: string, control: HTMLElement, help?: string | null, about?: { text: string; label: string } | null): HTMLElement {
+// A question mark whose words show on hover and, pressed, in a popover beside it; the popover's id is what a
+// control names in aria-describedby, so a screen reader hears the words with it.
+function about(id: string, text: string, label: string): { button: HTMLElement; popover: HTMLElement } {
+  const popover = h('div', { id: `${id}-about`, class: 'about', popover: 'auto', style: `position-anchor: --${id}-about` }, text);
+  const button = h('button', { type: 'button', class: 'about-button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': label, title: text, popovertarget: popover.id, style: `anchor-name: --${id}-about` }, icon('help'));
+  return { button, popover };
+}
+
+// A field's label, its control, and a hint after it. What a setting is for is behind a question mark beside its label.
+function field(label: string, shown: HTMLElement, help?: string | null, aboutText?: { text: string; label: string } | null): HTMLElement {
   fieldCounter += 1;
+  // A combobox is labelled through the select it holds, which names its field.
+  const control = shown.localName === 'frontier-combobox' ? shown.querySelector('select') ?? shown : shown;
   const id = control.id || `field-${fieldCounter}`;
   control.id = id;
   const helpElement = help ? h('small', { id: `${id}-help` }, help) : null;
-  const aboutElement = about ? h('div', { id: `${id}-about`, class: 'about', popover: 'auto', style: `position-anchor: --${id}-about` }, about.text) : null;
-  const described = [helpElement?.id, aboutElement?.id].filter(Boolean).join(' ');
+  const question = aboutText ? about(id, aboutText.text, aboutText.label) : null;
+  const described = [helpElement?.id, question?.popover.id].filter(Boolean).join(' ');
   if (described) control.setAttribute('aria-describedby', described);
   else control.removeAttribute('aria-describedby');
-  const aboutButton = about && aboutElement
-    ? h('button', { type: 'button', class: 'about-button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': about.label, title: about.text, popovertarget: aboutElement.id, style: `anchor-name: --${id}-about` }, icon('help'))
-    : null;
-  return h('div', { class: 'field' }, h('div', { class: 'field-label' }, h('label', { for: id }, label), aboutButton, aboutElement), control, helpElement);
+  return h('div', { class: 'field' }, h('div', { class: 'field-label' }, h('label', { for: id }, label), question?.button, question?.popover), shown, helpElement);
+}
+
+// A select whose options a person filters by typing, for a list that can be long.
+function searchable(select: HTMLSelectElement, placeholder: string, empty: string): HTMLElement {
+  return ds('frontier-combobox', { placeholder, empty }, select);
 }
 
 export class NewChatForm {
@@ -95,6 +106,9 @@ export class NewChatForm {
   private readonly workspaceBase = h('input', { type: 'text', name: 'workspaceBase' });
   private readonly definition = h('select', { name: 'agentDefinition' });
   private readonly persona = h('select', { name: 'persona' });
+  private readonly definitionField: HTMLElement;
+  private readonly personaField: HTMLElement;
+  private readonly existingField: HTMLElement;
 
   constructor(host: NewChatHost) {
     this.host = host;
@@ -104,6 +118,9 @@ export class NewChatForm {
     this.workspaceName.placeholder = t('new.workspace_name_placeholder');
     this.workspaceBase.placeholder = t('new.workspace_base_placeholder');
     this.start.textContent = t('new.start');
+    this.definitionField = searchable(this.definition, t('new.find'), t('new.no_match'));
+    this.personaField = searchable(this.persona, t('new.find'), t('new.no_match'));
+    this.existingField = searchable(this.existingWorkspace, t('new.find'), t('new.no_match'));
     this.options.append(h('summary', {}, h('strong', {}, t('new.options')), this.summaryText), this.optionsBody, this.workspaceBody);
     this.form = h('form', { 'aria-labelledby': 'new-chat-heading' },
       h('h2', { id: 'new-chat-heading' }, t('new.heading')),
@@ -276,10 +293,10 @@ export class NewChatForm {
     this.optionsBody.replaceChildren(
       field(t('new.runtime'), runtimeSelect),
       field(t('new.worker'), workerSelect),
-      field(t('new.model'), modelSelect, groups.length === 0 ? t('new.no_models') : null),
+      field(t('new.model'), searchable(modelSelect, t('new.find_model'), t('new.no_model')), groups.length === 0 ? t('new.no_models') : null),
       ...settingFields,
-      field(t('new.definition'), this.definition),
-      field(t('new.persona'), this.persona),
+      field(t('new.definition'), this.definitionField),
+      field(t('new.persona'), this.personaField),
       field(t('new.title'), this.title),
     );
     this.drawWorkspace();
@@ -325,20 +342,22 @@ export class NewChatForm {
     };
     if (this.workspaceMode === 'existing' && workspaces.length === 0) this.workspaceMode = 'none';
     if (this.workspaceMode === 'new' && provisioners.length === 0) this.workspaceMode = 'none';
+    // A worker with no workspace provisioner says so behind a question mark beside the legend, not in a line of its own.
+    const question = provisioners.length === 0 && workspaces.length === 0 ? about('workspace-mode', t('new.no_provisioners'), t('new.about_workspace')) : null;
+    const choices = ds('frontier-row', { wrap: true, gap: '4', role: 'radiogroup', 'aria-labelledby': 'workspace-legend', 'aria-describedby': question?.popover.id },
+      radio('none', t('new.no_workspace'), false),
+      radio('existing', t('new.existing_workspace'), workspaces.length === 0),
+      radio('new', t('new.new_workspace'), provisioners.length === 0),
+    );
     fill(this.workspaceBody,
-      h('legend', {}, t('new.workspace')),
-      h('div', { class: 'choices' },
-        radio('none', t('new.no_workspace'), false),
-        radio('existing', t('new.existing_workspace'), workspaces.length === 0),
-        radio('new', t('new.new_workspace'), provisioners.length === 0),
-      ),
-      this.workspaceMode === 'existing' ? field(t('new.workspace'), this.existingWorkspace) : null,
+      h('legend', { id: 'workspace-legend' }, h('span', { class: 'field-label' }, t('new.workspace'), question?.button, question?.popover)),
+      choices,
+      this.workspaceMode === 'existing' ? field(t('new.workspace'), this.existingField) : null,
       this.workspaceMode === 'new' ? h('div', { class: 'grid' },
         field(t('new.provisioner'), this.provisioner),
         field(t('new.workspace_name'), this.workspaceName, t('new.workspace_name_help')),
         field(t('new.workspace_base'), this.workspaceBase, t('new.workspace_base_help')),
       ) : null,
-      provisioners.length === 0 && workspaces.length === 0 ? h('small', {}, t('new.no_provisioners')) : null,
     );
   }
 

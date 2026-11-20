@@ -6,12 +6,15 @@ Applications, written against Frontier's Application Interface
 
 ## What it does
 
-Chat contributes two **panels** a person places in a deck. **Chat** shows the
-list of chats beside the open one; it needs a keyboard and at least 720 by 420
-pixels. **Chat, one at a time** shows the list or one chat, with targets sized
-for a finger; it fits 320 by 400 and works by touch. Either can be set, in its
-deck, to open on one chat, and the actions bring whichever the deck shown holds
-forward.
+Chat contributes three **panels** a person places in a deck. **Chats** lists
+the chats and the other public sessions, to find one by its words and start a
+new one; it fits 240 by 320. **Chat** shows one chat, its conversation and
+composer; it needs a keyboard and at least 420 by 360 pixels. A chat chosen in
+Chats opens in the Chat panel on that Surface, and the Chat panel says what it
+shows, so Chats marks it. **Chat, one at a time** shows the list or one chat,
+with targets sized for a finger; it fits 320 by 400 and works by touch. A Chat
+panel can be set, in its deck, to open on one chat, and the actions bring
+whichever the deck shown holds forward.
 
 - **Starting a chat** takes one prompt. Chat picks a runtime that is ready on a
   connected worker, remembering the last choice on each surface. Options choose
@@ -20,17 +23,22 @@ forward.
   worker, or a new one from a workspace provisioner there, by name and base.
   When the runtime is not ready on the worker, the form says why, in the
   runtime's own words.
-- **A turn streams** as it runs: the prompt as a bubble at the end of the line,
-  the agent's words as rendered Markdown beside it, and its thinking, each tool
-  call (its input, files, diffs and result) and its plan as cards that open.
-  The composer shows whether the turn is waiting or running, and for how long.
-  When it ends it says why. The prompt a chat starts with shows at once, and
-  the whole conversation loads again from the agent when a turn ends.
+- **A turn streams** as it runs, drawn by the Design System's
+  `frontier-transcript`, the same as in every Application: the prompt as a
+  bubble at the end of the line, the agent's words as Markdown with its code
+  coloured, its thoughts, each tool call as a card of its kind (an edit's diff,
+  a command and its output, a read, a search), the plan, and the mode, commands
+  and context used in a bar under it. The composer shows whether the turn is
+  waiting or running, and for how long. The prompt a chat starts with shows at
+  once, and the whole conversation loads again from the agent when a turn ends.
 - **The next prompt** can be sent while a turn runs. It waits, and a newer one
   replaces it. A queued prompt can be canceled, and a running turn stopped,
   keeping what the agent wrote.
 - **Runtime, model and mode** sit in the composer's bar; the model and mode
-  change during a session where the agent allows it.
+  change during a session where the agent allows it. The model picker is the
+  Design System's `frontier-combobox`: typing "deepseek flash" shows every
+  DeepSeek Flash model. So are the new chat form's model, agent definition,
+  persona and workspace pickers.
 - **Attachments**: images, audio and files go with a prompt when the agent
   takes them. Text files go inline when it takes no embedded files. Anything
   the agent does not take is named, and nothing is sent.
@@ -72,16 +80,17 @@ source lists the chats for their inputs.
 | `contributions.json` | The Application as data. |
 | `host.ts`, `src/host/chats.ts` | The methods. |
 | `surface.ts`, `src/actions.ts` | The surface registration and its actions. |
-| `src/view/` | The two panels: the list, the new chat form, the conversation, the transcript and the composer. |
+| `src/link.ts` | How the panels on one Surface ask each other to show a chat and say what they show. |
+| `src/view/` | The panels: the list, the new chat form, the conversation and the composer. |
 | `src/shared.ts` | The chat record and the methods' input and output. |
 | `translations.json` | Every word a person reads, by token. |
-| `test/` | Unit tests of the methods and the transcript, and browser tests of the views. |
+| `test/` | Unit tests of the methods and the prompt's attachments, and browser tests of the views. |
 
 The views are plain semantic HTML and the Design System's `frontier-*`
-elements: the wide panel is a `frontier-split` whose list the person drags to
-size, the open chat a stack of a header row, a `frontier-scroll` transcript
-and the composer as a `frontier-card`; states are `frontier-badge`s, empty
-views `frontier-empty`, the chat's actions a `frontier-menu`. Chat's own CSS
+elements: the open chat is a stack of a header row, a `frontier-scroll`
+holding the `frontier-transcript`, and the composer as a `frontier-card`;
+states are `frontier-badge`s, empty views `frontier-empty`, the chat's actions
+a `frontier-menu`, long lists `frontier-combobox`es. Chat's own CSS
 is only the arrangement, all of it in tokens, with the Soft radius: controls
 and list entries take the control radius, bubbles and cards the large one,
 panes and bars stay square, badges and dots round.

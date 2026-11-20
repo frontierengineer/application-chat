@@ -1,15 +1,11 @@
 import type { ActionContext, Failure, OptionSourceContext, SelectChoice, Unavailable } from '../../application';
-import { type ChatRecord, type CreateChatOutput, applicationId, openKey } from './shared.ts';
+import { panelLink } from './link.ts';
+import { type ChatRecord, type CreateChatOutput, applicationId } from './shared.ts';
 import { failure, text } from './text.ts';
 
 async function show(context: ActionContext, target: string): Promise<void | Failure | Unavailable> {
-  const written = await context.store.putJson({ key: openKey(context.currentSurface.id), value: { target, at: Date.now() } });
-  if (!written.ok) return written;
-  const wide = await context.panels.reveal('chat');
-  if (wide.ok) return;
-  if (!wide.unavailable) return wide;
-  const compact = await context.panels.reveal('chat-compact');
-  if (!compact.ok && !compact.unavailable) return compact;
+  const shown = await panelLink(context).open(target);
+  if (!shown.ok && !shown.unavailable) return shown;
 }
 
 function required(context: ActionContext, input: Record<string, unknown>, key: string): string | Failure {

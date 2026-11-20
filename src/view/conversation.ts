@@ -4,6 +4,7 @@ import type {
   Result,
   Session,
   Subscription,
+  SessionMode,
   TranscriptEvent,
   TurnEvent,
   TurnFinishedEvent,
@@ -12,9 +13,28 @@ import { type ChatPrompt, type ChatRecord, promptText } from '../shared.ts';
 import { type Attachment, buildPrompt } from './attachments.ts';
 import { stateBadge, stateOf } from './app.ts';
 import { ds, h, icon } from './dom.ts';
-import { bytes, clock, money, tokens } from './format.ts';
-import { type RenderEnvironment, renderItem, stopReasonText } from './render-items.ts';
-import { type Item, TranscriptModel } from './transcript-model.ts';
+import type { ViewEnvironment } from './environment.ts';
+import { bytes, clock } from './format.ts';
+
+// The Design System's frontier-transcript, as this view holds it: it draws every event it is fed.
+interface TranscriptElement extends HTMLElement {
+  apply(events: TranscriptEvent | readonly TranscriptEvent[]): void;
+  replay(history: readonly TranscriptEvent[]): void;
+  labels: Record<string, string>;
+  modes: readonly SessionMode[];
+}
+
+// Every word the transcript draws, each a token of translations.json: copyMessage is transcript.copy_message.
+const TRANSCRIPT_LABELS = [
+  'you', 'agent', 'thought', 'thinking', 'working', 'copy', 'copied', 'copyMessage', 'input', 'output', 'raw', 'locations', 'plan',
+  'mode', 'modeChanged', 'commands', 'context', 'created', 'noOutput', 'seconds', 'pending', 'in_progress', 'completed', 'failed',
+  'cancelled', 'max_tokens', 'max_turn_requests', 'refusal', 'turnFailed', 'error', 'warning', 'diffApproximate', 'image', 'audio',
+  'kind_read', 'kind_edit', 'kind_delete', 'kind_move', 'kind_search', 'kind_execute', 'kind_think', 'kind_fetch', 'kind_switch_mode', 'kind_other',
+] as const;
+
+export function transcriptLabels(t: (token: string) => string): Record<string, string> {
+  return Object.fromEntries(TRANSCRIPT_LABELS.map((name) => [name, t(`transcript.${name.replace(/[A-Z]/g, (letter) => `_${letter.toLowerCase()}`)}`)]));
+}
 
 export interface ChatHandle {
   key: string;
@@ -32,9 +52,10 @@ export interface ChatHandle {
   remove: (() => Promise<Result>) | null;
 }
 
-export interface ConversationHost extends RenderEnvironment {
+export interface ConversationHost extends ViewEnvironment {
   layout: 'wide' | 'compact';
   back(): void;
+  newChat(): void;
   // The prompt a chat was started with, shown at once until the transcript holds it.
   pending(key: string): string | null;
   settled(key: string): void;
@@ -56,10 +77,6 @@ export class Conversation {
   readonly element: HTMLElement;
   private handle: ChatHandle;
   private readonly host: ConversationHost;
-  private readonly model = new TranscriptModel();
-  private readonly itemElements = new Map<string, HTMLElement>();
-  private readonly dirty = new Set<Item>();
-  private frame = 0;
   private subscriptions: Subscription[] = [];
   // undefined until the first bind, so a chat with no session yet is drawn too.
   private boundSessionId: string | null | undefined = undefined;
@@ -80,16 +97,21 @@ export class Conversation {
   private readonly titleElement = h('h2', {});
   private readonly badges = ds('frontier-row', { wrap: true, gap: '2' });
   private readonly metaElement = h('small', { class: 'meta' });
-  private readonly usageSlot = h('span', { class: 'usage' });
   private readonly menuSlot = h('span', {});
-  private readonly controls = ds('frontier-row', { gap: '2', class: 'controls' }, this.usageSlot, this.menuSlot);
+  private readonly controls = ds('frontier-row', { gap: '2', class: 'controls' }, this.menuSlot);
   private menu: HTMLElement | null = null;
   private menuItems = '';
   private choicesSignature = '';
+  private modesSignature = '[]';
   private readonly notices = h('div', { class: 'notices' });
   private readonly scroller = ds('frontier-scroll', { role: 'region', tabindex: '0' });
-  private readonly transcript = ds('frontier-stack', { class: 'transcript', padding: '5', gap: '4', role: 'log', 'aria-live': 'polite', 'aria-relevant': 'additions' });
-  private readonly typing = h('div', { class: 'typing-row' });
+  private readonly transcript = ds('frontier-transcript', {}) as TranscriptElement;
+  private readonly empty: HTMLElement;
+  private readonly column = ds('frontier-stack', { class: 'transcript', padding: '5', gap: '4' });
+  // The prompt a chat was started with, drawn as its turn until the agent's own transcript holds it.
+  private shownPrompt: string | null = null;
+  private fed = false;
+  private stuck = true;
   private readonly jump = h('button', { type: 'button', class: 'jump', 'data-size': 'small', hidden: true });
   private readonly textarea = h('textarea', { rows: '2' });
   private readonly chips = h('div', { class: 'chips' });
@@ -100,7 +122,6 @@ export class Conversation {
   private readonly attachButton = h('button', { type: 'button', 'data-variant': 'ghost' });
   private readonly fileInput = h('input', { type: 'file', multiple: true, class: 'visually-hidden', tabindex: '-1' });
   private readonly problem = h('p', { class: 'problem', 'data-tone': 'danger', role: 'alert' });
-  private readonly hint = h('p', { class: 'hint' });
   private readonly composer: HTMLFormElement;
 
   constructor(host: ConversationHost, handle: ChatHandle) {
@@ -116,6 +137,9 @@ export class Conversation {
     this.attachButton.setAttribute('aria-label', t('composer.attach_label'));
     this.attachButton.append(icon('attach'));
     this.scroller.setAttribute('aria-label', t('conversation.transcript'));
+    this.transcript.setAttribute('label', t('conversation.transcript'));
+    this.transcript.labels = transcriptLabels(t);
+    this.empty = ds('frontier-empty', {}, icon('chat'), h('h2', {}, t('conversation.empty_heading')), h('p', {}, t('conversation.empty')));
     this.composer = h('form', { 'aria-label': t('composer.form') },
       ds('frontier-card', { class: 'composer' },
         ds('frontier-stack', { gap: '2' },
@@ -124,7 +148,7 @@ export class Conversation {
           ds('frontier-row', { gap: '2' }, this.choices, this.status, ds('frontier-spacer'), this.attachButton, this.fileInput, this.stopButton, this.sendButton),
         ),
       ),
-      h('div', { class: 'below-composer' }, this.problem, this.hint),
+      h('div', { class: 'below-composer' }, this.problem),
     );
     this.element = h('main', { class: 'main', 'aria-label': handle.title() },
       ds('frontier-stack', { fill: true, gap: '0' },
@@ -132,6 +156,7 @@ export class Conversation {
           host.layout === 'compact' ? h('button', { type: 'button', 'data-variant': 'ghost', 'aria-label': t('conversation.back'), onclick: () => host.back() }, icon('back')) : null,
           ds('frontier-stack', { gap: '1', class: 'titles' }, this.titleElement, this.badges),
           this.controls,
+          host.layout === 'wide' ? h('button', { type: 'button', 'data-variant': 'ghost', 'aria-label': t('list.new'), title: t('list.new_help'), onclick: () => host.newChat() }, icon('plus')) : null,
         ),
         this.notices,
         this.scroller,
@@ -139,9 +164,10 @@ export class Conversation {
       ),
     );
     this.element.dataset.width = host.width();
-    this.scroller.append(this.transcript);
-    this.transcript.append(this.typing, this.jump);
+    this.column.append(this.empty, this.transcript, this.jump);
+    this.scroller.append(this.column);
     this.wire();
+    this.drawPending();
     this.textarea.value = host.draft(handle.key);
     this.autosize();
     this.update(handle);
@@ -187,7 +213,23 @@ export class Conversation {
     this.stopButton.addEventListener('click', () => void this.stop());
     this.jump.addEventListener('click', () => this.scrollToEnd());
     this.scroller.addEventListener('scroll', () => {
-      this.jump.hidden = this.nearEnd();
+      this.stuck = this.nearEnd();
+      this.jump.hidden = this.stuck;
+    });
+    // The transcript draws on the next frame: a view that followed the end keeps following it as it grows.
+    new ResizeObserver(() => {
+      if (this.stuck) this.scrollToEnd();
+      else if (this.fed) this.jump.hidden = false;
+    }).observe(this.transcript);
+    this.transcript.addEventListener('frontier-copy', (event) => void this.host.copy((event as CustomEvent<{ text: string }>).detail.text));
+    this.transcript.addEventListener('frontier-link', (event) => {
+      window.open((event as CustomEvent<{ href: string }>).detail.href, '_blank', 'noopener,noreferrer');
+    });
+    this.transcript.addEventListener('frontier-command', (event) => {
+      const name = (event as CustomEvent<{ name: string }>).detail.name;
+      this.textarea.value = `/${name} ${this.textarea.value.replace(/^\/\S*\s*/, '')}`;
+      this.autosize();
+      this.textarea.focus();
     });
   }
 
@@ -214,7 +256,6 @@ export class Conversation {
     this.subscriptions = [];
     window.clearInterval(this.ticker);
     window.clearTimeout(this.reloadTimer);
-    cancelAnimationFrame(this.frame);
   }
 
   private bind(session: Session | null): void {
@@ -223,10 +264,7 @@ export class Conversation {
     this.boundSessionId = session?.id ?? null;
     this.lastFinished = null;
     this.queued = null;
-    if (!session) {
-      if (this.model.items.length === 0) this.drawAll();
-      return;
-    }
+    if (!session) return;
     this.subscriptions.push(session.transcript.follow((event) => this.onEvent(event)));
     this.subscriptions.push(session.watchTurns((event) => this.onTurn(event)));
     void this.loadHistory(session);
@@ -240,9 +278,9 @@ export class Conversation {
       this.replayUnavailable = false;
       this.replayDoubted = false;
       this.historyProblem = null;
-      this.model.reset(history.value);
-      this.drawAll();
-      this.scrollToEnd();
+      this.transcript.replay(history.value);
+      this.fed = history.value.length > 0;
+      this.drawPending();
     } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !session.isActive() || !this.replayDoubted)) {
       // An agent cannot replay while it runs a turn, and a turn may run that this view has not heard start: what
       // streams in is shown, and history is asked for again when a turn ends or, failing that, in a few seconds.
@@ -257,7 +295,6 @@ export class Conversation {
     } else {
       this.historyProblem = history.message;
     }
-    if (!history.ok && this.itemElements.size === 0) this.drawAll();
     this.drawNotices();
     this.drawHeader();
   }
@@ -272,9 +309,15 @@ export class Conversation {
   }
 
   private onEvent(event: TranscriptEvent): void {
-    const item = this.model.apply(event);
-    if (item) this.markDirty(item);
-    if (event.type === 'usage' || event.type === 'done') this.drawHeader();
+    // The prompt drawn while the chat started is this turn: the agent's own turn_start is not drawn twice.
+    if (event.type === 'turn_start' && this.shownPrompt !== null && event.userPrompt.trim() === this.shownPrompt.trim()) {
+      this.shownPrompt = null;
+      this.host.settled(this.handle.key);
+    } else {
+      this.transcript.apply(event);
+      this.fed = true;
+    }
+    this.empty.hidden = true;
     if (event.type === 'done') this.scheduleReload();
   }
 
@@ -286,75 +329,21 @@ export class Conversation {
     }
     if (event.type === 'turn.started' && this.queued?.turnId === event.turnId) this.queued = null;
     this.drawComposer();
-    this.drawTyping();
   }
 
-  private markDirty(item: Item): void {
-    this.dirty.add(item);
-    if (this.frame === 0) {
-      this.frame = requestAnimationFrame(() => {
-        this.frame = 0;
-        const stick = this.nearEnd();
-        for (const dirty of this.dirty) this.drawItem(dirty);
-        this.dirty.clear();
-        this.drawTyping();
-        if (stick) this.scrollToEnd();
-        else this.jump.hidden = false;
-      });
-    }
-  }
-
-  private drawItem(item: Item): void {
-    const existing = this.itemElements.get(item.key);
-    const element = renderItem(item, this.host, existing);
-    if (item.kind === 'user' && item.text.trim() === this.host.pending(this.handle.key)?.trim()) this.settlePending();
-    if (!existing) {
-      this.itemElements.get('empty')?.remove();
-      this.itemElements.delete('empty');
-      this.itemElements.set(item.key, element);
-      this.transcript.insertBefore(element, this.typing);
-    }
-  }
-
-  // The prompt a chat was started with shows at once, before the agent's
-  // transcript holds it, and gives way to the transcript's own turn.
-  private settlePending(): void {
-    this.itemElements.get('pending')?.remove();
-    this.itemElements.delete('pending');
-    this.host.settled(this.handle.key);
-  }
-
-  private drawAll(): void {
-    for (const element of this.itemElements.values()) element.remove();
-    this.itemElements.clear();
+  // A chat's first prompt shows at once, before the agent's transcript holds it; with nothing to show, the empty state.
+  private drawPending(): void {
     const starting = this.handle.record?.starting?.prompt ?? null;
     const pending = this.host.pending(this.handle.key) ?? (starting === null ? null : promptText(starting));
-    const held = pending !== null && this.model.items.some((item) => item.kind === 'user' && item.text.trim() === pending.trim());
-    if (held) this.host.settled(this.handle.key);
-    if (pending !== null && !held) {
-      const element = renderItem({ kind: 'user', key: 'pending', text: pending, attachments: [], timestamp: null }, this.host);
-      this.itemElements.set('pending', element);
-      this.transcript.insertBefore(element, this.typing);
-    } else if (this.model.items.length === 0) {
-      const empty = ds('frontier-empty', {}, icon('chat'), h('h2', {}, this.host.t('conversation.empty_heading')), h('p', {}, this.host.t('conversation.empty')));
-      this.itemElements.set('empty', empty);
-      this.transcript.insertBefore(empty, this.typing);
+    this.shownPrompt = null;
+    if (pending !== null && this.fed) {
+      // The history holds this prompt once the agent took it, and then it is the history's own turn.
+      this.host.settled(this.handle.key);
+    } else if (pending !== null) {
+      this.shownPrompt = pending;
+      this.transcript.apply({ type: 'turn_start', userPrompt: pending, turnId: null, timestamp: null });
     }
-    for (const item of this.model.items) this.drawItem(item);
-    this.drawTyping();
-  }
-
-  private drawTyping(): void {
-    const turn = this.handle.session()?.currentTurn() ?? null;
-    const last = this.model.items[this.model.items.length - 1];
-    const streaming = last && (last.kind === 'text' || last.kind === 'thinking') && last.partial;
-    if (this.handle.record?.starting && !this.handle.session()) {
-      this.typing.replaceChildren(h('span', { class: 'typing' }, h('span', {}), h('span', {}), h('span', {}), ` ${this.host.t('conversation.starting')}`));
-    } else if (turn && turn.startedAt !== null && !streaming) {
-      this.typing.replaceChildren(h('span', { class: 'typing' }, h('span', {}), h('span', {}), h('span', {}), ` ${this.host.t('conversation.working')}`));
-    } else {
-      this.typing.replaceChildren();
-    }
+    this.empty.hidden = this.fed || this.shownPrompt !== null;
   }
 
   private nearEnd(): boolean {
@@ -363,6 +352,7 @@ export class Conversation {
 
   private scrollToEnd(): void {
     this.scroller.scrollTop = this.scroller.scrollHeight;
+    this.stuck = true;
     this.jump.hidden = true;
   }
 
@@ -378,19 +368,6 @@ export class Conversation {
     this.element.setAttribute('aria-label', this.handle.title());
     this.metaElement.textContent = this.handle.meta();
     this.badges.replaceChildren(stateBadge(stateOf(session, this.handle.record, t)), this.metaElement);
-    const usage = this.model.usage;
-    if (usage && usage.contextWindow > 0) {
-      const share = Math.min(1, usage.contextUsed / usage.contextWindow);
-      const label = t('conversation.context', { used: tokens(usage.contextUsed, this.host.language), window: tokens(usage.contextWindow, this.host.language) });
-      this.usageSlot.title = label;
-      this.usageSlot.replaceChildren(
-        h('meter', { min: '0', max: '1', low: '0.7', high: '0.9', optimum: '0', value: String(share), 'aria-label': label }),
-        `${Math.round(share * 100)}%`,
-        usage.costAmount !== null && usage.costCurrency ? ` · ${money(usage.costAmount, usage.costCurrency, this.host.language)}` : '',
-      );
-    } else {
-      this.usageSlot.replaceChildren();
-    }
     const width = this.host.width() === 'fill' ? 'width-column' : 'width-fill';
     const values = [this.handle.rename ? 'rename' : '', session ? 'release' : this.handle.resume ? 'resume' : '', width, this.handle.remove ? 'remove' : ''].filter(Boolean);
     // The menu is drawn again only when its items change, so a redraw never closes it under the person's pointer.
@@ -438,12 +415,18 @@ export class Conversation {
     const signature = JSON.stringify([this.host.runtimeTitle(this.handle.runtimeId), session?.id ?? null, session?.model() ?? null, session?.modes() ?? null, this.handle.models()]);
     if (signature === this.choicesSignature) return;
     this.choicesSignature = signature;
+    // The transcript names a mode by the name the agent gives it; a new list redraws it, so it is set only when it changes.
+    const modes = JSON.stringify(session?.modes().available ?? []);
+    if (modes !== this.modesSignature) {
+      this.modesSignature = modes;
+      this.transcript.modes = session?.modes().available ?? [];
+    }
     const choices: HTMLElement[] = [ds('frontier-badge', { title: this.handle.meta() }, this.host.runtimeTitle(this.handle.runtimeId))];
     if (session) {
       const groups = this.handle.models();
       if (groups.length > 0) {
         const current = session.model();
-        const select = h('select', { 'aria-label': t('conversation.model'), 'data-size': 'small', 'data-variant': 'ghost' },
+        const select = h('select', {},
           h('option', { value: '', selected: current === null }, t('conversation.default_model')),
           ...groups.map((group) => h('optgroup', { label: group.label },
             ...group.versions.map((version) => h('option', { value: version.id, selected: current?.modelId === version.id }, version.label)))));
@@ -452,7 +435,8 @@ export class Conversation {
           const answer = await session.setModel({ modelId: select.value });
           this.reportAction(answer, t('conversation.model_unavailable'));
         });
-        choices.push(select);
+        // A runtime may list many models: typing filters them by any words of the model's name, version or group.
+        choices.push(ds('frontier-combobox', { label: t('conversation.model'), placeholder: t('conversation.find_model'), empty: t('conversation.no_model'), 'data-size': 'small', 'data-variant': 'ghost' }, select));
         const version = groups.flatMap((group) => group.versions).find((entry) => entry.id === current?.modelId);
         for (const setting of version?.settings ?? []) choices.push(this.settingControl(session, setting, current?.settings ?? {}));
       } else {
@@ -526,18 +510,26 @@ export class Conversation {
     const session = this.handle.session();
     this.badges.replaceChildren(stateBadge(stateOf(session, this.handle.record, t)), this.metaElement);
     const turn = session?.currentTurn() ?? null;
+    const inactive = session !== null && !session.isActive();
+    const starting = Boolean(this.handle.record?.starting);
     window.clearInterval(this.ticker);
+    // What the composer says sits in its own bar, so the composer never moves as a turn starts and ends.
     const statusParts: (HTMLElement | string)[] = [];
-    if (turn && turn.startedAt !== null) {
+    if (starting) {
+      statusParts.push(t('composer.starting_hint'));
+    } else if (inactive) {
+      statusParts.push(t('composer.inactive_hint'));
+    } else if (turn && turn.startedAt !== null) {
       const startedAt = turn.startedAt;
       const label = ds('frontier-badge', { 'data-tone': 'success', 'data-state': 'running' }, t('turn.running', { time: clock(Date.now() - startedAt) }));
       this.ticker = window.setInterval(() => (label.textContent = t('turn.running', { time: clock(Date.now() - startedAt) })), 1000);
       statusParts.push(label);
     } else if (turn) {
       statusParts.push(ds('frontier-badge', { 'data-tone': 'warning' }, t('turn.waiting')));
-    } else if (this.lastFinished) {
-      statusParts.push(this.lastFinished.error ? t('turn.failed_because', { error: this.lastFinished.error }) : stopReasonText(this.lastFinished.stopReason, this.host));
+    } else if (this.lastFinished?.error) {
+      statusParts.push(t('turn.failed_because', { error: this.lastFinished.error }));
     }
+    if (session && !session.promptCapabilities().image && this.attachments.some((file) => file.type.startsWith('image/'))) statusParts.push(t('composer.no_images_hint'));
     if (this.queued) {
       const queued = this.queued;
       statusParts.push(ds('frontier-badge', { 'data-tone': 'warning', title: queued.text }, t('turn.queued')));
@@ -555,19 +547,10 @@ export class Conversation {
     }
     this.status.replaceChildren(...statusParts);
     this.stopButton.hidden = !turn;
-    const inactive = session !== null && !session.isActive();
-    const starting = Boolean(this.handle.record?.starting);
     this.sendButton.disabled = this.sending || inactive || starting;
     this.sendButton.setAttribute('aria-busy', String(this.sending));
     this.sendButton.setAttribute('aria-label', turn ? t('composer.queue') : t('composer.send'));
     this.sendButton.title = turn ? t('composer.queue') : t('composer.send');
-    this.hint.textContent = starting
-      ? t('composer.starting_hint')
-      : inactive
-      ? t('composer.inactive_hint')
-      : session && !this.handle.session()?.promptCapabilities().image && this.attachments.some((file) => file.type.startsWith('image/'))
-        ? t('composer.no_images_hint')
-        : turn ? t('composer.queue_hint') : '';
     this.chips.replaceChildren(...this.attachments.map((file, index) => h('span', { class: 'attachment' },
       `${file.name} · ${bytes(file.data.length, this.host.language)}`,
       h('button', { type: 'button', 'data-variant': 'ghost', 'data-size': 'small', 'aria-label': t('composer.remove_attachment', { name: file.name }), onclick: () => {
@@ -575,7 +558,6 @@ export class Conversation {
         this.drawComposer();
       } }, icon('delete')),
     )));
-    this.drawTyping();
   }
 
   private async addFiles(files: File[]): Promise<void> {

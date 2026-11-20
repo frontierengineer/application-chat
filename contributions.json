@@ -7,12 +7,20 @@
   "surface": {
     "panels": [
       {
+        "id": "chats",
+        "title": "Chats",
+        "description": "Your chats with agents and the other public sessions: find one and open it in Chat, or start a new one.",
+        "icon": [{ "d": "M4 6h16M4 12h16M4 18h10", "kind": "outline" }],
+        "minWidth": 240,
+        "minHeight": 320
+      },
+      {
         "id": "chat",
         "title": "Chat",
-        "description": "Your chats with agents, each beside the list of the others.",
+        "description": "One chat with an agent: its conversation, as it runs, and the composer. Opens the chat chosen in Chats.",
         "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
-        "minWidth": 720,
-        "minHeight": 420,
+        "minWidth": 420,
+        "minHeight": 360,
         "inputs": ["keyboard"],
         "fields": [{ "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }]
       },
@@ -30,7 +38,7 @@
       {
         "id": "new-chat",
         "title": "New chat",
-        "description": "Brings Chat forward on a new chat, where a person writes the first prompt and chooses the runtime, worker, model and workspace."
+        "description": "Brings a Chat panel forward on a new chat, where a person writes the first prompt and chooses the runtime, worker, model and workspace."
       },
       {
         "id": "start-chat",
@@ -46,7 +54,7 @@
       {
         "id": "open-chat",
         "title": "Open chat",
-        "description": "Brings a chat forward in Chat, in the deck shown.",
+        "description": "Brings a chat forward in a Chat panel, in the deck shown.",
         "input": [
           { "type": "select", "key": "chat", "label": "Chat", "required": true, "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "emptyHint": "There are no chats yet." }
         ]
