@@ -116,12 +116,12 @@ export class ChatApp {
     }
     if (this.selection?.kind === 'chat' && !this.chats.has(this.selection.id)) this.selection = null;
     if (this.selection?.kind === 'session' && !this.sessions.has(this.selection.id)) this.selection = null;
-    const followed = this.followedChat(this.context.instance.values());
-    if (followed !== null) this.selection = { kind: 'chat', id: followed };
+    const followed = this.followed(this.context.instance.values());
+    if (followed !== null) this.selection = followed;
     if (this.selection === null && this.layout === 'conversation') this.selection = this.firstChat() ?? { kind: 'new' };
     this.context.instance.onValuesChanged((values) => {
-      const chatId = this.followedChat(values);
-      if (chatId !== null) this.select({ kind: 'chat', id: chatId });
+      const shown = this.followed(values);
+      if (shown !== null) this.select(shown);
     });
     const asked = await this.link.pending();
     if (asked !== null) await this.openTarget(asked, false);
@@ -129,10 +129,16 @@ export class ChatApp {
     this.announce();
   }
 
-  // The chat this Panel Instance follows, as set in its deck, when it is one Chat has.
-  private followedChat(values: FieldValues): string | null {
+  // What this Panel Instance follows, as set in its deck or opened by another panel: a chat Chat has, or a
+  // session, shown as the chat that runs it when there is one.
+  private followed(values: FieldValues): Selection {
     const chatId = values['chat'];
-    return typeof chatId === 'string' && this.chats.has(chatId) ? chatId : null;
+    if (typeof chatId === 'string' && this.chats.has(chatId)) return { kind: 'chat', id: chatId };
+    const sessionId = values['sessionId'];
+    if (typeof sessionId !== 'string' || sessionId === '') return null;
+    const chat = [...this.chats.values()].find((entry) => entry.sessionId === sessionId);
+    if (chat) return { kind: 'chat', id: chat.id };
+    return this.sessions.has(sessionId) ? { kind: 'session', id: sessionId } : null;
   }
 
   // While this view shows a chat to the person, its finished turns need no notification.

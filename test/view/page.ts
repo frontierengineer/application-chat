@@ -32,6 +32,21 @@ const preferences = new Map<string, unknown>();
 const clipboard: string[] = [];
 const modalAnswers: unknown[] = [];
 const valueHandlers: ((values: Record<string, unknown>) => void)[] = [];
+// The Shell's Deck panels, when a test asks for them: open hands the values to the Chat panel, post reaches every other panel.
+const deck = { on: false, opened: [] as unknown[], listeners: [] as { panelId: string; handler: (message: unknown) => void }[] };
+function deckPanels(panelId: string): Record<string, unknown> {
+  const ok = { ok: true as const, value: undefined };
+  if (!deck.on) return {};
+  return {
+    open: async (request: { panelId: string; values?: Record<string, unknown> }) => {
+      deck.opened.push(request);
+      if (request.values) for (const handler of valueHandlers) handler(request.values);
+      return ok;
+    },
+    post: (message: unknown) => { for (const listener of deck.listeners) if (listener.panelId !== panelId) listener.handler(structuredClone(message)); },
+    onMessage: (handler: (message: unknown) => void) => { deck.listeners.push({ panelId, handler }); return { unsubscribe() {} }; },
+  };
+}
 
 function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: Record<string, unknown> = {}): SurfaceContext & { lifecycle: unknown } {
   const ok = { ok: true as const, value: undefined };
@@ -45,7 +60,7 @@ function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: 
     },
     clipboard: { copy: async (text: string) => { clipboard.push(text); return ok; } },
     cursor: { insertText: async () => ok },
-    panels: { reveal: async () => ok, update: async () => ok },
+    panels: { reveal: async () => ok, update: async () => ok, ...deckPanels(panelId) },
     instance: { panelId, instanceId: `instance-${panelId}`, values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
     badges: { update: async () => ok },
     modals: {
@@ -66,6 +81,7 @@ Object.assign(window, {
   surfacePreferences: { get: (key: string) => preferences.get(key) ?? null },
   clipboard,
   modalAnswers,
+  deck,
   setPanelValues: (values: Record<string, unknown>) => { for (const handler of valueHandlers) handler(values); },
   // A deck holding the Chats panel beside a Chat panel on one Surface, each its own view; or the compact panel alone.
   mountView: async (layout: 'deck' | 'compact', values: Record<string, unknown> = {}) => {
