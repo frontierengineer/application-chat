@@ -31,7 +31,7 @@ test('the id, title and color are what the interface allows', () => {
   assert.ok(contributions.title.length > 0);
 });
 
-test('Chat depends on no Application: the runtimes and workspace provisioners it offers are whichever the install has', () => {
+test('Chat depends on no Application: the runtimes and workspace provisioners it offers are whichever the installation has', () => {
   assert.equal(contributions.dependencies, undefined);
 });
 

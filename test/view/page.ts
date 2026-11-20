@@ -2,26 +2,26 @@ import type { AvailableModel, SurfaceContext } from '../../../application';
 import { registration as host } from '../../host.ts';
 import { registration as surface } from '../../surface.ts';
 import translations from '../../translations.json';
-import { type FakeSession, FakeInstall } from '../fake-install.ts';
+import { type FakeSession, FakeInstallation } from '../fake-installation.ts';
 
-const install = new FakeInstall();
-install.clock = Date.now();
-install.host = host;
+const installation = new FakeInstallation();
+installation.clock = Date.now();
+installation.host = host;
 const pending: { session: FakeSession; turnId: string }[] = [];
-install.agent = (session, turnId) => {
+installation.agent = (session, turnId) => {
   pending.push({ session, turnId });
-  session.emit({ type: 'thinking', id: `${turnId}-think`, delta: 'Reading the test file first.', partial: true, text: null, timestamp: install.now() });
+  session.emit({ type: 'thinking', id: `${turnId}-think`, delta: 'Reading the test file first.', partial: true, text: null, timestamp: installation.now() });
 };
 const models: AvailableModel[] = [
   { label: 'Claude Opus', versions: [{ id: 'opus', label: 'Opus 5.5', contextWindow: 200000, settings: [{ type: 'select', key: 'effort', label: 'Effort', description: 'How hard the model thinks before it answers.', choices: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }] }] }] },
   { label: 'Claude Sonnet', versions: [{ id: 'sonnet', label: 'Sonnet 5.5', contextWindow: 200000, settings: [] }] },
   { label: 'DeepSeek', versions: [{ id: 'deepseek-v4-flash', label: 'V4 Flash', contextWindow: 128000, settings: [] }, { id: 'deepseek-v4-flash-thinking', label: 'V4 Flash, thinking', contextWindow: 128000, settings: [] }, { id: 'deepseek-v4-pro', label: 'V4 Pro', contextWindow: 128000, settings: [] }] },
 ];
-install.workers.push({ id: 'w1', title: 'Laptop', connected: true }, { id: 'w2', title: 'Build server', connected: true });
-install.addRuntime('github.com/frontierengineer/application-claude-code', 'Claude Code', ['w1', 'w2'], models);
-install.addRuntime('github.com/frontierengineer/application-opencode', 'OpenCode', ['w1']);
-install.runtimes[1]!.reports.w2 = { ready: false, reason: 'OpenCode is not installed on this worker yet. It is installed automatically.', models: [] };
-install.provisioners.push({ id: 'git-1', title: 'frontier on Laptop', workerId: 'w1', total: 4 });
+installation.workers.push({ id: 'w1', title: 'Laptop', connected: true }, { id: 'w2', title: 'Build server', connected: true });
+installation.addRuntime('github.com/frontierengineer/application-claude-code', 'Claude Code', ['w1', 'w2'], models);
+installation.addRuntime('github.com/frontierengineer/application-opencode', 'OpenCode', ['w1']);
+installation.runtimes[1]!.reports.w2 = { ready: false, reason: 'OpenCode is not installed on this worker yet. It is installed automatically.', models: [] };
+installation.provisioners.push({ id: 'git-1', title: 'frontier on Laptop', workerId: 'w1', total: 4 });
 
 function live(): { session: FakeSession; turnId: string } | undefined {
   while (pending.length > 0 && pending[0]!.session.turn?.turnId !== pending[0]!.turnId) pending.shift();
@@ -55,7 +55,7 @@ function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: 
   const self: Instance = { instanceId: `instance-${panelId}`, panelId, values: { ...values }, front: true, heard: [] };
   deck.instances.push(self);
   return {
-    ...install.context(translations.en),
+    ...installation.context(translations.en),
     currentSurface: { id: 'surface-1', title: () => 'Work laptop', type, language: () => 'en-US', inputs: () => (type === 'touch' ? ['touch'] : ['pointer', 'keyboard']) },
     surfacePreferences: {
       get: (key: string, fallback?: unknown) => (preferences.has(key) ? structuredClone(preferences.get(key)) : fallback ?? null),
@@ -107,7 +107,7 @@ function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: 
 }
 
 Object.assign(window, {
-  install,
+  installation,
   surfacePreferences: { get: (key: string) => preferences.get(key) ?? null },
   clipboard,
   modalAnswers,
@@ -129,13 +129,13 @@ Object.assign(window, {
   stream: (text: string) => {
     const turn = live();
     if (!turn) return false;
-    turn.session.emit({ type: 'thinking', id: `${turn.turnId}-think`, delta: '', partial: false, text: 'Reading the test file first.', timestamp: install.now() });
-    turn.session.emit({ type: 'tool_call', callId: `${turn.turnId}-read`, name: 'Read', input: { file_path: '/repo/test/login.test.ts' }, partial: false, toolKind: 'read', status: 'in_progress', locations: [{ path: '/repo/test/login.test.ts', line: null }], content: [], timestamp: install.now() });
-    turn.session.emit({ type: 'tool_result', callId: `${turn.turnId}-read`, output: 'it("logs in", async () => { ... })', isError: false, durationMilliseconds: 840, timestamp: install.now() });
-    turn.session.emit({ type: 'tool_call', callId: `${turn.turnId}-edit`, name: 'Edit', input: { file_path: '/repo/test/login.test.ts' }, partial: false, toolKind: 'edit', status: 'completed', locations: [{ path: '/repo/test/login.test.ts', line: 12 }], content: [{ type: 'diff', path: '/repo/test/login.test.ts', oldText: 'await page.click(login);\nexpect(user).toBe(1);', newText: 'await page.click(login);\nawait page.waitForURL("/home");\nexpect(user).toBe(1);' }], timestamp: install.now() });
-    turn.session.emit({ type: 'plan', entries: [{ content: 'Find the race', priority: 'high', status: 'completed' }, { content: 'Wait for navigation', priority: 'high', status: 'completed' }, { content: 'Run the suite', priority: 'medium', status: 'in_progress' }], timestamp: install.now() });
-    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: text.slice(0, 20), partial: true, text: null, timestamp: install.now() });
-    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: text.slice(20), partial: true, text: null, timestamp: install.now() });
+    turn.session.emit({ type: 'thinking', id: `${turn.turnId}-think`, delta: '', partial: false, text: 'Reading the test file first.', timestamp: installation.now() });
+    turn.session.emit({ type: 'tool_call', callId: `${turn.turnId}-read`, name: 'Read', input: { file_path: '/repo/test/login.test.ts' }, partial: false, toolKind: 'read', status: 'in_progress', locations: [{ path: '/repo/test/login.test.ts', line: null }], content: [], timestamp: installation.now() });
+    turn.session.emit({ type: 'tool_result', callId: `${turn.turnId}-read`, output: 'it("logs in", async () => { ... })', isError: false, durationMilliseconds: 840, timestamp: installation.now() });
+    turn.session.emit({ type: 'tool_call', callId: `${turn.turnId}-edit`, name: 'Edit', input: { file_path: '/repo/test/login.test.ts' }, partial: false, toolKind: 'edit', status: 'completed', locations: [{ path: '/repo/test/login.test.ts', line: 12 }], content: [{ type: 'diff', path: '/repo/test/login.test.ts', oldText: 'await page.click(login);\nexpect(user).toBe(1);', newText: 'await page.click(login);\nawait page.waitForURL("/home");\nexpect(user).toBe(1);' }], timestamp: installation.now() });
+    turn.session.emit({ type: 'plan', entries: [{ content: 'Find the race', priority: 'high', status: 'completed' }, { content: 'Wait for navigation', priority: 'high', status: 'completed' }, { content: 'Run the suite', priority: 'medium', status: 'in_progress' }], timestamp: installation.now() });
+    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: text.slice(0, 20), partial: true, text: null, timestamp: installation.now() });
+    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: text.slice(20), partial: true, text: null, timestamp: installation.now() });
     return true;
   },
   finish: () => {
@@ -143,7 +143,7 @@ Object.assign(window, {
     if (!turn) return false;
     pending.shift();
     const answer = turn.session.history.filter((event) => event.type === 'text' && event.id === `${turn.turnId}-answer`).map((event) => (event.type === 'text' ? event.delta : '')).join('');
-    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: '', partial: false, text: answer, timestamp: install.now() });
+    turn.session.emit({ type: 'text', id: `${turn.turnId}-answer`, delta: '', partial: false, text: answer, timestamp: installation.now() });
     turn.session.finish(turn.turnId);
     return true;
   },

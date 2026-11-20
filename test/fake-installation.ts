@@ -111,15 +111,15 @@ export class FakeSession {
   private turns = 0;
   readonly followers = listeners<TranscriptEvent>();
   readonly turnWatchers = listeners<TurnEvent>();
-  private readonly install: FakeInstall;
+  private readonly installation: FakeInstallation;
 
-  constructor(install: FakeInstall, id: string, options: SessionCreateOptions) {
-    this.install = install;
+  constructor(installation: FakeInstallation, id: string, options: SessionCreateOptions) {
+    this.installation = installation;
     this.id = id;
     this.options = options;
     this.runtimeId = options.runtimeId;
     this.workerId = options.workerId;
-    this.createdAt = install.now();
+    this.createdAt = installation.now();
     this.workspace = options.workspaceId ? { workspaceId: options.workspaceId, files: {} } : null;
     this.agentId = options.agentSessionId ?? `agent-${id}`;
   }
@@ -137,14 +137,14 @@ export class FakeSession {
   // The agent reporting itself as it opens, told through sessions.onChanged as the Application context tells it.
   report(available: SessionMode[], current: string | null): void {
     this.modeState = { current, available };
-    this.install.changed('session', this.id);
+    this.installation.changed('session', this.id);
   }
 
   // The agent changing its own mode, as when it leaves plan mode.
   switchMode(modeId: string): void {
     this.modeState = { ...this.modeState, current: modeId };
-    this.emit({ type: 'mode', modeId, timestamp: this.install.now() });
-    this.install.changed('session', this.id);
+    this.emit({ type: 'mode', modeId, timestamp: this.installation.now() });
+    this.installation.changed('session', this.id);
   }
 
   emit(event: TranscriptEvent): void {
@@ -160,8 +160,8 @@ export class FakeSession {
     if (this.turn) {
       if (this.queued) this.canceled.push(this.queued.turnId);
       this.queued = { turnId, prompt: options.prompt };
-      this.turnWatchers.emit({ type: 'turn.queued', sessionId: this.id, turnId, timestamp: this.install.now() });
-      this.install.changed('session', this.id);
+      this.turnWatchers.emit({ type: 'turn.queued', sessionId: this.id, turnId, timestamp: this.installation.now() });
+      this.installation.changed('session', this.id);
       return { ok: true, value: { turnId, queued: true } };
     }
     void this.run(turnId, options.prompt);
@@ -169,24 +169,24 @@ export class FakeSession {
   }
 
   private async run(turnId: string, prompt: SessionPromptOptions['prompt']): Promise<void> {
-    this.turn = { turnId, startedAt: this.install.now() };
-    this.turnWatchers.emit({ type: 'turn.started', sessionId: this.id, turnId, timestamp: this.install.now() });
-    this.install.changed('session', this.id);
+    this.turn = { turnId, startedAt: this.installation.now() };
+    this.turnWatchers.emit({ type: 'turn.started', sessionId: this.id, turnId, timestamp: this.installation.now() });
+    this.installation.changed('session', this.id);
     const text = typeof prompt === 'string' ? prompt : prompt.map((part) => (part.type === 'text' ? part.text : '')).join('');
-    this.emit({ type: 'turn_start', userPrompt: text, turnId, timestamp: this.install.now() });
+    this.emit({ type: 'turn_start', userPrompt: text, turnId, timestamp: this.installation.now() });
     if (typeof prompt !== 'string') {
       for (const part of prompt) if (part.type === 'image') this.emit({ type: 'attachment', channel: 'user', content: part, timestamp: null });
     }
-    await this.install.agent(this, turnId, prompt);
+    await this.installation.agent(this, turnId, prompt);
   }
 
   finish(turnId: string, stopReason: 'end_turn' | 'cancelled' = 'end_turn'): void {
     if (this.turn?.turnId !== turnId) return;
     const usage = { contextUsed: 1200 * this.turns, contextWindow: 200000, costAmount: 0.01 * this.turns, costCurrency: 'USD' };
-    this.emit({ type: 'done', stopReason, usage, timestamp: this.install.now() });
+    this.emit({ type: 'done', stopReason, usage, timestamp: this.installation.now() });
     this.turn = null;
-    this.turnWatchers.emit({ type: 'turn.finished', sessionId: this.id, turnId, timestamp: this.install.now(), stopReason, error: null, usage, tokens: null });
-    this.install.changed('session', this.id);
+    this.turnWatchers.emit({ type: 'turn.finished', sessionId: this.id, turnId, timestamp: this.installation.now(), stopReason, error: null, usage, tokens: null });
+    this.installation.changed('session', this.id);
     const next = this.queued;
     this.queued = null;
     if (next) void this.run(next.turnId, next.prompt);
@@ -196,7 +196,7 @@ export class FakeSession {
     this.canceled.push(turnId);
     if (this.queued?.turnId === turnId) {
       this.queued = null;
-      this.install.changed('session', this.id);
+      this.installation.changed('session', this.id);
       return { ok: true, value: undefined };
     }
     if (this.turn?.turnId === turnId) {
@@ -208,15 +208,15 @@ export class FakeSession {
 
   async setMode(modeId: string): Promise<Result> {
     this.modeState = { ...this.modeState, current: modeId };
-    this.emit({ type: 'mode', modeId, timestamp: this.install.now() });
-    this.install.changed('session', this.id);
+    this.emit({ type: 'mode', modeId, timestamp: this.installation.now() });
+    this.installation.changed('session', this.id);
     return { ok: true, value: undefined };
   }
 
   async setModel(model: { modelId: string; settings?: Record<string, string | number | boolean> }): Promise<Result> {
     if (this.runtimeId === 'runtime-fixed') return { ok: false, unavailable: true, message: 'No model changes.' };
     this.modelState = { modelId: model.modelId, settings: model.settings ?? {} };
-    this.install.changed('session', this.id);
+    this.installation.changed('session', this.id);
     return { ok: true, value: undefined };
   }
 
@@ -244,7 +244,7 @@ export interface FakeRuntime {
   reports: Record<string, Omit<RuntimeOnWorker, 'workerId'>>;
 }
 
-export class FakeInstall {
+export class FakeInstallation {
   // How long sessions.create takes, as launching a real agent does.
   createDelay = 0;
   // How long after a session is created its agent reports the modes it offers.
@@ -299,101 +299,101 @@ export class FakeInstall {
     return { id: worker.id, title: () => worker.title, isConnected: () => worker.connected };
   }
 
-  private workspaceObject(workspace: FakeInstall['workspaces'][number]) {
+  private workspaceObject(workspace: FakeInstallation['workspaces'][number]) {
     return { id: workspace.id, name: workspace.name, workspaceProvisionerId: workspace.workspaceProvisionerId, workerId: workspace.workerId, isMounted: () => workspace.mounted };
   }
 
   context(translations: Record<string, string>, extra: Record<string, unknown> = {}): Record<string, unknown> {
-    const install = this;
+    const installation = this;
     const ok = <T>(value: T): Result<T> => ({ ok: true, value });
     return {
       applicationId: 'github.com/frontierengineer/application-chat',
       translate: (token: string) => translations[token] ?? token,
       store: this.store,
       logger: { debug: async () => {}, info: async () => {}, warn: async () => {}, error: async () => {} },
-      notifications: { create: async (notification: { title: string; body?: string; priority: string }) => { install.notified.push(notification); return ok({ id: `notification-${install.notified.length}` }); } },
+      notifications: { create: async (notification: { title: string; body?: string; priority: string }) => { installation.notified.push(notification); return ok({ id: `notification-${installation.notified.length}` }); } },
       sessions: {
         async create(options: SessionCreateOptions) {
-          install.createOptions.push(options);
-          if (install.createDelay > 0) await new Promise((resolve) => setTimeout(resolve, install.createDelay));
-          if (install.createFailure) return install.createFailure;
-          const runtime = install.runtimes.find((entry) => entry.id === options.runtimeId);
+          installation.createOptions.push(options);
+          if (installation.createDelay > 0) await new Promise((resolve) => setTimeout(resolve, installation.createDelay));
+          if (installation.createFailure) return installation.createFailure;
+          const runtime = installation.runtimes.find((entry) => entry.id === options.runtimeId);
           if (!runtime?.reports[options.workerId]?.ready) return { ok: false, unavailable: true, message: `${runtime?.title ?? 'The runtime'} is not ready on this worker.` };
-          install.counter += 1;
-          const session = new FakeSession(install, `session-${install.counter}`, options);
-          install.sessionMap.set(session.id, session);
-          const workspace = install.workspaces.find((entry) => entry.id === options.workspaceId);
+          installation.counter += 1;
+          const session = new FakeSession(installation, `session-${installation.counter}`, options);
+          installation.sessionMap.set(session.id, session);
+          const workspace = installation.workspaces.find((entry) => entry.id === options.workspaceId);
           if (workspace) {
             workspace.mounted = true;
             workspace.holders += 1;
           }
-          install.changed('session', session.id, 'added');
-          setTimeout(() => { if (install.agentModes.length > 0) session.report(install.agentModes, install.agentModes[0]!.id); }, install.reportDelay);
+          installation.changed('session', session.id, 'added');
+          setTimeout(() => { if (installation.agentModes.length > 0) session.report(installation.agentModes, installation.agentModes[0]!.id); }, installation.reportDelay);
           return ok(session);
         },
-        async list() { return ok([...install.sessionMap.values()]); },
+        async list() { return ok([...installation.sessionMap.values()]); },
         async get(id: string) {
-          const session = install.sessionMap.get(id);
+          const session = installation.sessionMap.get(id);
           return session ? ok(session) : notFound(`There is no session ${id}.`);
         },
         async release(id: string) {
-          const session = install.sessionMap.get(id);
+          const session = installation.sessionMap.get(id);
           if (!session) return notFound(`There is no session ${id}.`);
-          install.sessionMap.delete(id);
-          install.released.push(id);
-          const workspace = install.workspaces.find((entry) => entry.id === session.workspace?.workspaceId);
+          installation.sessionMap.delete(id);
+          installation.released.push(id);
+          const workspace = installation.workspaces.find((entry) => entry.id === session.workspace?.workspaceId);
           if (workspace) workspace.holders -= 1;
-          install.changed('session', id, 'removed');
+          installation.changed('session', id, 'removed');
           return ok(undefined);
         },
-        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => install.sessionChanges.add(handler),
+        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => installation.sessionChanges.add(handler),
       },
       runtimes: {
-        async list() { return ok(install.runtimes.map((runtime) => install.runtimeObject(runtime))); },
+        async list() { return ok(installation.runtimes.map((runtime) => installation.runtimeObject(runtime))); },
         async get(id: string) {
-          const runtime = install.runtimes.find((entry) => entry.id === id);
-          return runtime ? ok(install.runtimeObject(runtime)) : notFound(`There is no runtime ${id}.`);
+          const runtime = installation.runtimes.find((entry) => entry.id === id);
+          return runtime ? ok(installation.runtimeObject(runtime)) : notFound(`There is no runtime ${id}.`);
         },
-        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => install.runtimeChanges.add(handler),
+        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => installation.runtimeChanges.add(handler),
       },
       workers: {
-        async list() { return ok(install.workers.map((worker) => install.workerObject(worker))); },
+        async list() { return ok(installation.workers.map((worker) => installation.workerObject(worker))); },
         async get(id: string) {
-          const worker = install.workers.find((entry) => entry.id === id);
-          return worker ? ok(install.workerObject(worker)) : notFound('No such worker.');
+          const worker = installation.workers.find((entry) => entry.id === id);
+          return worker ? ok(installation.workerObject(worker)) : notFound('No such worker.');
         },
-        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => install.workerChanges.add(handler),
+        onChanged: (handler: Handler<{ id: string; kind: 'added' | 'changed' | 'removed' }>) => installation.workerChanges.add(handler),
       },
       workspaces: {
         async mount(options: { workspaceProvisionerId: string; name?: string; base?: string }) {
-          install.mounted.push(options);
-          const provisioner = install.provisioners.find((entry) => entry.id === options.workspaceProvisionerId);
+          installation.mounted.push(options);
+          const provisioner = installation.provisioners.find((entry) => entry.id === options.workspaceProvisionerId);
           if (!provisioner) return notFound('No such provisioner.');
-          install.counter += 1;
-          const workspace = { id: `workspace-${install.counter}`, name: options.name ?? `scratch-${install.counter}`, workspaceProvisionerId: provisioner.id, workerId: provisioner.workerId, mounted: true, holders: 1 };
-          install.workspaces.push(workspace);
+          installation.counter += 1;
+          const workspace = { id: `workspace-${installation.counter}`, name: options.name ?? `scratch-${installation.counter}`, workspaceProvisionerId: provisioner.id, workerId: provisioner.workerId, mounted: true, holders: 1 };
+          installation.workspaces.push(workspace);
           return ok({ workspaceId: workspace.id, files: {} });
         },
         async unmount(id: string) {
-          const workspace = install.workspaces.find((entry) => entry.id === id);
-          install.unmounted.push(id);
+          const workspace = installation.workspaces.find((entry) => entry.id === id);
+          installation.unmounted.push(id);
           if (workspace) {
             workspace.holders -= 1;
             if (workspace.holders <= 0) workspace.mounted = false;
           }
           return ok(undefined);
         },
-        async list() { return ok(install.workspaces.map((workspace) => install.workspaceObject(workspace))); },
+        async list() { return ok(installation.workspaces.map((workspace) => installation.workspaceObject(workspace))); },
         async get(id: string) {
-          const workspace = install.workspaces.find((entry) => entry.id === id);
-          return workspace ? ok(install.workspaceObject(workspace)) : notFound('No such workspace.');
+          const workspace = installation.workspaces.find((entry) => entry.id === id);
+          return workspace ? ok(installation.workspaceObject(workspace)) : notFound('No such workspace.');
         },
         workspaceProvisioners: {
           async list() {
-            return ok(install.provisioners.map((provisioner) => ({ ...provisioner, applicationId: 'github.com/frontierengineer/application-git-worktrees', description: null, slots: () => ({ total: provisioner.total, used: 0, available: provisioner.total }) })));
+            return ok(installation.provisioners.map((provisioner) => ({ ...provisioner, applicationId: 'github.com/frontierengineer/application-git-worktrees', description: null, slots: () => ({ total: provisioner.total, used: 0, available: provisioner.total }) })));
           },
           async get(id: string) {
-            const provisioner = install.provisioners.find((entry) => entry.id === id);
+            const provisioner = installation.provisioners.find((entry) => entry.id === id);
             return provisioner ? ok({ ...provisioner, applicationId: 'x', description: null, slots: () => ({ total: provisioner.total, used: 0, available: provisioner.total }) }) : notFound('No such provisioner.');
           },
           onChanged: () => ({ unsubscribe() {} }),
@@ -404,10 +404,10 @@ export class FakeInstall {
       personas: { async list() { return ok([{ id: 'calm', title: 'Calm', content: 'Be calm.' }]); } },
       methods: {
         async call(applicationId: string, methodId: string, input: Record<string, unknown>) {
-          install.calls.push({ method: methodId, input });
-          const method = install.host?.methods?.[methodId];
+          installation.calls.push({ method: methodId, input });
+          const method = installation.host?.methods?.[methodId];
           if (!method || !('call' in method)) return { ok: false, unavailable: true, message: 'No such method.' };
-          const answer = await method.call(install.context(translations) as never, input);
+          const answer = await method.call(installation.context(translations) as never, input);
           if (answer && typeof answer === 'object' && 'ok' in answer && answer.ok === false) return answer;
           return ok(answer);
         },

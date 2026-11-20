@@ -103,7 +103,7 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
   await page.locator('[data-part="user"]').first().waitFor();
   assert.equal(await page.locator('[data-part="user"]').first().textContent(), 'Fix the flaky login test', 'the first prompt shows at once, while the agent cannot yet replay');
-  const created = await page.evaluate<{ method: string; input: Record<string, unknown> }[]>('window.install.calls');
+  const created = await page.evaluate<{ method: string; input: Record<string, unknown> }[]>('window.installation.calls');
   assert.equal(created[0]?.method, 'create-chat');
   assert.equal(created[0]?.input.runtimeId, 'github.com/frontierengineer/application-claude-code');
   assert.equal(created[0]?.input.workerId, 'w1');
@@ -151,17 +151,17 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await model.click();
   await page.keyboard.type('opus');
   await page.keyboard.press('Enter');
-  await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.modelId ?? null")) === 'opus', 'the model change');
+  await eventually(async () => (await page.evaluate<string | null>("window.installation.sessionMap.get('session-1')?.modelState?.modelId ?? null")) === 'opus', 'the model change');
   await eventually(async () => (await page.getByRole('combobox', { name: 'Model' }).inputValue()) === 'Opus 5.5', 'the picker to show the model picked');
   await page.getByLabel('Effort', { exact: true }).selectOption('high');
-  await eventually(async () => (await page.evaluate<string | null>("window.install.sessionMap.get('session-1')?.modelState?.settings?.effort ?? null")) === 'high', 'the setting change');
+  await eventually(async () => (await page.evaluate<string | null>("window.installation.sessionMap.get('session-1')?.modelState?.settings?.effort ?? null")) === 'high', 'the setting change');
 
   await page.locator('input[type="file"]').setInputFiles([{ name: 'screen.png', mimeType: 'image/png', buffer: Buffer.from([137, 80, 78, 71]) }]);
   await page.getByText('screen.png', { exact: false }).waitFor();
   await page.getByLabel('Prompt', { exact: true }).fill('Does this look right?');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
-  await eventually(async () => (await page.evaluate<number>("window.install.sessionMap.get('session-1').prompts.length")) === 3, 'the prompt with an image');
-  const kinds = await page.evaluate<string[]>("window.install.sessionMap.get('session-1').prompts[2].map((part) => part.type)");
+  await eventually(async () => (await page.evaluate<number>("window.installation.sessionMap.get('session-1').prompts.length")) === 3, 'the prompt with an image');
+  const kinds = await page.evaluate<string[]>("window.installation.sessionMap.get('session-1').prompts[2].map((part) => part.type)");
   assert.deepEqual(kinds, ['text', 'image']);
   await page.locator('[data-part="user"] img').first().waitFor();
 
@@ -173,7 +173,7 @@ test('a first chat starts from one prompt, streams its turn, queues, cancels, sw
   await page.getByLabel('Prompt', { exact: true }).fill('Carry on where you stopped');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
   await eventually(async () => (await page.locator('.chat-list frontier-badge').first().textContent()) === 'Running', 'the chat to resume');
-  const options = await page.evaluate<{ agentSessionId?: string }[]>('window.install.createOptions');
+  const options = await page.evaluate<{ agentSessionId?: string }[]>('window.installation.createOptions');
   assert.equal(options[1]?.agentSessionId, 'agent-session-1');
   await page.evaluate("window.stream('Resumed, and the suite passes.')");
   await page.evaluate('window.finish()');
@@ -202,7 +202,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
   await page.getByLabel('Prompt', { exact: true }).fill('Start on the login fix');
   await page.getByRole('button', { name: 'Start chat' }).click();
   await page.locator('[data-part="user"]').first().waitFor();
-  const calls = await page.evaluate<{ input: Record<string, unknown> }[]>('window.install.calls');
+  const calls = await page.evaluate<{ input: Record<string, unknown> }[]>('window.installation.calls');
   assert.deepEqual(calls[0]?.input.workspace, { workspaceProvisionerId: 'git-1', name: 'fix-login' });
   assert.equal(calls[0]?.input.runtimeId, 'github.com/frontierengineer/application-opencode');
   assert.match((await page.locator('.conversation-header .meta').textContent()) ?? '', /OpenCode on Laptop · fix-login/);
@@ -212,7 +212,7 @@ test('the new chat form says why a runtime is not ready, and starts a chat in a 
 test('a chat whose agent takes long to start shows at once as starting, with its prompt, then runs', {}, async () => {
   const page = await open('deck');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
-  await page.evaluate('window.install.createDelay = 3000');
+  await page.evaluate('window.installation.createDelay = 3000');
   await page.getByLabel('Prompt', { exact: true }).fill('Review the open pull request');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
   await page.getByText('Starting the agent.').waitFor({ timeout: 1000 });
@@ -234,14 +234,14 @@ test('a chat whose agent is not open shows what it can, and the whole conversati
   await page.evaluate("window.stream('The changelog lists three fixes.')");
   await page.evaluate('window.finish()');
   await page.getByText('The changelog lists three fixes.').waitFor();
-  await page.evaluate("(() => { const session = window.install.sessionMap.get('session-1'); session.active = false; session.reason = 'Its worker restarted.'; window.install.changed('session', 'session-1'); })()");
+  await page.evaluate("(() => { const session = window.installation.sessionMap.get('session-1'); session.active = false; session.reason = 'Its worker restarted.'; window.installation.changed('session', 'session-1'); })()");
   await page.getByText('The agent is not running').waitFor();
   await page.locator('.list-pane').getByRole('button', { name: 'New chat' }).click();
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   await page.locator('.chat-list button.entry').first().click();
   await new Promise((resolve) => setTimeout(resolve, 6000));
   assert.equal(await page.getByText('Only the live conversation shows').count(), 0, 'an agent that is not open is not taken as one that cannot replay');
-  await page.evaluate("(() => { const session = window.install.sessionMap.get('session-1'); session.active = true; session.reason = null; window.install.changed('session', 'session-1'); })()");
+  await page.evaluate("(() => { const session = window.installation.sessionMap.get('session-1'); session.active = true; session.reason = null; window.installation.changed('session', 'session-1'); })()");
   await page.getByText('The changelog lists three fixes.').waitFor({ timeout: 2000 });
   assert.equal(await page.getByText('Only the live conversation shows').count(), 0);
   await page.close();
@@ -250,7 +250,7 @@ test('a chat whose agent is not open shows what it can, and the whole conversati
 test('the mode select shows once the agent reports its modes, after the chat opened, and follows a mode the agent switched to itself', {}, async () => {
   const page = await open('deck');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
-  await page.evaluate("window.install.reportDelay = 1500; window.install.agentModes = [{ id: 'default', name: 'Default', description: 'Asks before it edits.' }, { id: 'plan', name: 'Plan', description: 'Plans without editing.' }, { id: 'auto', name: 'Accept edits', description: 'Edits without asking.' }]");
+  await page.evaluate("window.installation.reportDelay = 1500; window.installation.agentModes = [{ id: 'default', name: 'Default', description: 'Asks before it edits.' }, { id: 'plan', name: 'Plan', description: 'Plans without editing.' }, { id: 'auto', name: 'Accept edits', description: 'Edits without asking.' }]");
   await page.getByLabel('Prompt', { exact: true }).fill('Plan the relay queue');
   await page.getByLabel('Prompt', { exact: true }).press('Enter');
   await page.locator('[data-part="user"]').first().waitFor();
@@ -259,7 +259,7 @@ test('the mode select shows once the agent reports its modes, after the chat ope
   await mode.waitFor({ timeout: 3000 });
   assert.deepEqual([await mode.locator('option').allTextContents(), await mode.inputValue()], [['Default', 'Plan', 'Accept edits'], 'default']);
   assert.deepEqual([await mode.getAttribute('data-size'), await mode.getAttribute('data-variant')], ['small', 'ghost'], "the Design System's small ghost select");
-  await page.evaluate("window.install.sessionMap.get('session-1').switchMode('plan')");
+  await page.evaluate("window.installation.sessionMap.get('session-1').switchMode('plan')");
   await eventually(async () => (await mode.inputValue()) === 'plan', 'the mode the agent switched to');
   await page.close();
 });
@@ -274,7 +274,7 @@ test('the compact panel shows the list or one chat at a time, with a way back', 
   await page.locator('[data-part="user"]').first().waitFor();
   await page.evaluate("window.stream('The nightly build is green.')");
   await page.getByText('The nightly build is green.').waitFor();
-  await page.evaluate("window.install.sessionMap.get('session-1').replay = false");
+  await page.evaluate("window.installation.sessionMap.get('session-1').replay = false");
   await page.evaluate('window.finish()');
   await page.getByText('Only the live conversation shows').waitFor();
   assert.equal(await page.getByText('The nightly build is green.').count(), 1, 'what streamed in stays when the agent cannot replay');
@@ -283,7 +283,7 @@ test('the compact panel shows the list or one chat at a time, with a way back', 
   await page.getByRole('heading', { name: 'Chats' }).waitFor();
   assert.equal(await page.locator('.chat-list .entry-title').first().textContent(), 'Check on the nightly build');
   await shot(page, 'compact-list');
-  const chatId = await page.evaluate<string>("(async () => (await window.install.store.list('chats/')).value[0].slice('chats/'.length))()");
+  const chatId = await page.evaluate<string>("(async () => (await window.installation.store.list('chats/')).value[0].slice('chats/'.length))()");
   await page.evaluate(`window.setPanelValues({ chat: 'not-a-chat' })`);
   assert.equal(await page.getByRole('heading', { name: 'Chats' }).isVisible(), true, 'a chat that Chat does not have is not followed');
   await page.evaluate(`window.setPanelValues({ chat: ${JSON.stringify(chatId)} })`);
@@ -292,7 +292,7 @@ test('the compact panel shows the list or one chat at a time, with a way back', 
 });
 
 test('with no runtime installed, the new chat form says so and points to installing one', {}, async () => {
-  const page = await open('deck', undefined, 'window.install.runtimes.length = 0');
+  const page = await open('deck', undefined, 'window.installation.runtimes.length = 0');
   await page.getByRole('heading', { name: 'No runtime yet' }).waitFor();
   await page.getByText('Install an Application that offers one', { exact: false }).waitFor();
   await page.close();
@@ -379,7 +379,7 @@ test('Chats shows a chat in the Chat panel of its Deck by that panel\'s own fiel
     await page.locator('.list-pane').getByRole('button', { name: 'New chat' }).click();
     await page.getByRole('heading', { name: 'New chat' }).waitFor();
   }
-  const chatIdOf = (title: string) => page.evaluate<string>(`(async () => { for (const key of (await window.install.store.list('chats/')).value) { const chat = (await window.install.store.getJson(key)).value; if (chat.title === ${JSON.stringify(title)}) return chat.id; } return ''; })()`);
+  const chatIdOf = (title: string) => page.evaluate<string>(`(async () => { for (const key of (await window.installation.store.list('chats/')).value) { const chat = (await window.installation.store.getJson(key)).value; if (chat.title === ${JSON.stringify(title)}) return chat.id; } return ''; })()`);
   const fields = () => page.evaluate<Record<string, unknown>>("window.deck.instances.find((instance) => instance.panelId === 'chat').values");
   assert.deepEqual(await fields(), { chat: '', sessionId: '' }, 'on a new chat\'s form the Chat panel names no chat');
   const entries = page.locator('.chat-list button.entry');
@@ -394,7 +394,7 @@ test('Chats shows a chat in the Chat panel of its Deck by that panel\'s own fiel
   await eventually(async () => JSON.stringify(await fields()) === JSON.stringify({ chat: '', sessionId: '' }) && (await page.locator('.chat-list button.entry[aria-current="true"]').count()) === 0, 'the Chat panel to clear its fields on a new chat, and Chats to mark none');
   await entries.nth(0).click();
   await page.locator('.conversation-header h2', { hasText: 'Explain the build' }).waitFor();
-  const sessionId = await page.evaluate<string>(`(async () => (await window.install.store.getJson('chats/' + ${JSON.stringify(login)})).value.sessionId)()`);
+  const sessionId = await page.evaluate<string>(`(async () => (await window.installation.store.getJson('chats/' + ${JSON.stringify(login)})).value.sessionId)()`);
   await page.evaluate(`window.setPanelValues({ chat: '', sessionId: ${JSON.stringify(sessionId)} })`);
   await page.locator('.conversation-header h2', { hasText: 'Fix the flaky login test' }).waitFor();
   await eventually(async () => JSON.stringify(await fields()) === JSON.stringify({ chat: login, sessionId: '' }), 'a session opened by its id to show as the chat that runs it, named so in the fields');
