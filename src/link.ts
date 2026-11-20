@@ -16,26 +16,17 @@ export interface PanelLink {
   current(): Promise<Target | null>;
 }
 
-// The Shell's way for an Application's panels to open one another and talk within a Deck, where the platform
-// has it: open places or reuses a panel in the Deck shown, post and onMessage reach the Application's other
-// panels in that Deck. Without it, a request goes through Chat's store and panels.reveal.
+// The Shell's way for a panel to open another in the Deck shown, where the platform has it: open hands the
+// values to an instance of the panel, reusing one or placing one. Without it, a request goes through Chat's
+// store and panels.reveal. What a Chat panel shows is always told through Chat's store.
 interface DeckPanels {
   open?(request: { panelId: string; values?: Record<string, unknown>; mode?: 'reuse' | 'new'; key?: string }): Promise<Result>;
-  post?(message: unknown): unknown;
-  onMessage?(handler: (message: unknown) => void): Subscription;
-}
-
-type Message = { type: 'chat.shown'; target: Target | null } | { type: 'chat.which' };
-
-function isMessage(value: unknown): value is Message {
-  return typeof value === 'object' && value !== null && ((value as Message).type === 'chat.shown' || (value as Message).type === 'chat.which');
 }
 
 const isChat = (target: Target): boolean => target !== 'new' && !target.startsWith('session:');
 
 export function panelLink(context: SurfaceContext): PanelLink {
   const panels = context.panels as Panels & DeckPanels;
-  const talks = typeof panels.post === 'function' && typeof panels.onMessage === 'function';
   const opening = openKey(context.currentSurface.id);
   const showing = shownKey(context.currentSurface.id);
   const take = async (): Promise<Target | null> => {
@@ -44,9 +35,6 @@ export function panelLink(context: SurfaceContext): PanelLink {
     await context.store.delete(opening);
     return request.value.target;
   };
-  const hear = (handler: (message: Message) => void): Subscription | null =>
-    talks && panels.onMessage ? panels.onMessage((message) => { if (isMessage(message)) handler(message); }) : null;
-  const state: { last: Target | null; answering: Subscription | null } = { last: null, answering: null };
   return {
     async open(target) {
       // A chat is the Chat panel's own field, so the Shell shows it in the panel already on it, or reuses one.
@@ -68,16 +56,9 @@ export function panelLink(context: SurfaceContext): PanelLink {
     },
     pending: take,
     shown(target) {
-      state.last = target;
-      if (talks) {
-        state.answering ??= hear((message) => { if (message.type === 'chat.which') panels.post?.({ type: 'chat.shown', target: state.last }); });
-        panels.post?.({ type: 'chat.shown', target });
-      }
       void context.store.putJson({ key: showing, value: { target } });
     },
     onShown(handler) {
-      const heard = hear((message) => { if (message.type === 'chat.shown') handler(message.target); });
-      if (heard) return heard;
       return context.store.watch('shown/', (change) => {
         if (change.key !== showing) return;
         void context.store.getJson<{ target: Target | null }>(showing).then((shown) => {
@@ -86,11 +67,6 @@ export function panelLink(context: SurfaceContext): PanelLink {
       });
     },
     async current() {
-      // In a Deck the Chat panels there answer by message; without one, the store holds what one on this Surface last showed.
-      if (talks) {
-        panels.post?.({ type: 'chat.which' });
-        return null;
-      }
       const shown = await context.store.getJson<{ target: Target | null }>(showing);
       return shown.ok ? shown.value?.target ?? null : null;
     },

@@ -32,9 +32,9 @@ const preferences = new Map<string, unknown>();
 const clipboard: string[] = [];
 const modalAnswers: unknown[] = [];
 const valueHandlers: ((values: Record<string, unknown>) => void)[] = [];
-// The Shell's Deck panels, when a test asks for them: open hands the values to the Chat panel, post reaches every other panel.
-const deck = { on: false, opened: [] as unknown[], listeners: [] as { panelId: string; handler: (message: unknown) => void }[] };
-function deckPanels(panelId: string): Record<string, unknown> {
+// The Shell's Deck panels, when a test asks for them: open hands the values to the Chat panel.
+const deck = { on: false, opened: [] as unknown[] };
+function deckPanels(): Record<string, unknown> {
   const ok = { ok: true as const, value: undefined };
   if (!deck.on) return {};
   return {
@@ -43,8 +43,6 @@ function deckPanels(panelId: string): Record<string, unknown> {
       if (request.values) for (const handler of valueHandlers) handler(request.values);
       return ok;
     },
-    post: (message: unknown) => { for (const listener of deck.listeners) if (listener.panelId !== panelId) listener.handler(structuredClone(message)); },
-    onMessage: (handler: (message: unknown) => void) => { deck.listeners.push({ panelId, handler }); return { unsubscribe() {} }; },
   };
 }
 
@@ -60,7 +58,7 @@ function surfaceContext(type: 'workstation' | 'touch', panelId: string, values: 
     },
     clipboard: { copy: async (text: string) => { clipboard.push(text); return ok; } },
     cursor: { insertText: async () => ok },
-    panels: { reveal: async () => ok, update: async () => ok, ...deckPanels(panelId) },
+    panels: { reveal: async () => ok, update: async () => ok, ...deckPanels() },
     instance: { panelId, instanceId: `instance-${panelId}`, values: () => values, onValuesChanged: (handler: (values: Record<string, unknown>) => void) => { valueHandlers.push(handler); return { unsubscribe() {} }; } },
     badges: { update: async () => ok },
     modals: {

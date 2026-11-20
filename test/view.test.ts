@@ -368,7 +368,7 @@ test('a chat chosen in the Chats panel opens in the Chat panel beside it, which 
   await page.close();
 });
 
-test('where the Shell lets panels open each other and talk in a Deck, Chats opens a chat in the Chat panel by its field and hears what it shows', {}, async () => {
+test('where the Shell lets a panel open another in a Deck, Chats opens a chat in the Chat panel by its field, and marks what it shows', {}, async () => {
   const page = await open('deck', undefined, 'window.deck.on = true');
   await page.getByRole('heading', { name: 'New chat' }).waitFor();
   for (const prompt of ['Fix the flaky login test', 'Explain the build']) {
@@ -385,7 +385,7 @@ test('where the Shell lets panels open each other and talk in a Deck, Chats open
   const opened = await page.evaluate<{ panelId: string; values?: Record<string, unknown>; mode?: string; key?: string }[]>('window.deck.opened');
   const chatId = await page.evaluate<string>("(async () => { const keys = (await window.install.store.list('chats/')).value; for (const key of keys) { const chat = (await window.install.store.getJson(key)).value; if (chat.title === 'Fix the flaky login test') return chat.id; } return ''; })()");
   assert.deepEqual(opened.at(-1), { panelId: 'chat', values: { chat: chatId }, mode: 'reuse', key: chatId }, 'a chat opens by the Chat panel\'s own field, reusing the panel on it');
-  await eventually(async () => (await entries.nth(1).getAttribute('aria-current')) === 'true', 'the list to mark the chat the Chat panel says it shows');
+  await eventually(async () => (await entries.nth(1).getAttribute('aria-current')) === 'true', 'the list to mark the chat the Chat panel shows');
   const sessionId = await page.evaluate<string>("(async () => (await window.install.store.getJson('chats/' + " + JSON.stringify(chatId) + ")).value.sessionId)()");
   await entries.nth(0).click();
   await page.locator('.conversation-header h2', { hasText: 'Explain the build' }).waitFor();
