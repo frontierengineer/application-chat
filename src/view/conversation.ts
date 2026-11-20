@@ -111,6 +111,7 @@ export class Conversation {
   // The prompt a chat was started with, drawn as its turn until the agent's own transcript holds it.
   private shownPrompt: string | null = null;
   private fed = false;
+  private lastEventAt = 0;
   private stuck = true;
   private readonly jump = h('button', { type: 'button', class: 'jump', 'data-size': 'small', hidden: true });
   private readonly textarea = h('textarea', { rows: '2' });
@@ -281,7 +282,7 @@ export class Conversation {
       this.transcript.replay(history.value);
       this.fed = history.value.length > 0;
       this.drawPending();
-    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !session.isActive() || !this.replayDoubted)) {
+    } else if (history.unavailable && (turnRunning || session.currentTurn() !== null || !session.isActive() || !this.replayDoubted || Date.now() - this.lastEventAt < 10_000)) {
       // An agent cannot replay while it runs a turn, and a turn may run that this view has not heard start: what
       // streams in is shown, and history is asked for again when a turn ends or, failing that, in a few seconds.
       this.replayDoubted = true;
@@ -309,6 +310,8 @@ export class Conversation {
   }
 
   private onEvent(event: TranscriptEvent): void {
+    // Events streaming in mean a turn runs, even one this view has not heard start, so no replay now is no proof.
+    this.lastEventAt = Date.now();
     // The prompt drawn while the chat started is this turn: the agent's own turn_start is not drawn twice.
     if (event.type === 'turn_start' && this.shownPrompt !== null && event.userPrompt.trim() === this.shownPrompt.trim()) {
       this.shownPrompt = null;
