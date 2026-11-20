@@ -22,7 +22,10 @@
         "minWidth": 420,
         "minHeight": 360,
         "inputs": ["keyboard"],
-        "fields": [{ "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." }]
+        "fields": [
+          { "type": "select", "key": "chat", "label": "Chat", "description": "The chat this panel opens on. Empty opens on the last one you chose.", "choices": { "applicationId": "github.com/frontierengineer/application-chat", "optionSourceId": "chats" }, "noneLabel": "The last one chosen", "emptyHint": "There are no chats yet." },
+          { "type": "text", "key": "sessionId", "label": "Session", "description": "A session this panel opens on, by its id: the chat that runs it, or the session itself when no chat does. A chat chosen above comes first." }
+        ]
       },
       {
         "id": "chat-compact",
