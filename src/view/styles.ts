@@ -76,7 +76,7 @@ frontier-badge[data-state="running"]::before { animation: chat-pulse var(--chat-
 .new-chat .field { display: grid; gap: var(--frontier-space-1); align-content: start; }
 .new-chat .field-label { display: flex; align-items: center; gap: var(--frontier-space-1); }
 .new-chat .field-label > label { font-weight: 600; font-size: var(--frontier-font-size-small); }
-.new-chat .about { position-area: block-end span-inline-end; margin: var(--frontier-space-1) 0; inset: auto; max-inline-size: 20rem; font-weight: 400; }
+.new-chat .about { position-area: block-end span-inline-end; margin: var(--frontier-space-1) 0; inset: auto; max-inline-size: 20rem; font-weight: 400; text-transform: none; letter-spacing: normal; font-size: var(--frontier-font-size-small); }
 .new-chat .field small { color: var(--frontier-color-text-muted); }
 .new-chat .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: var(--frontier-space-3); }
 .new-chat details.options { background: var(--frontier-color-surface-sunken); border-radius: var(--frontier-radius-large); padding: var(--frontier-space-3) var(--frontier-space-4); }
