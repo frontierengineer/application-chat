@@ -85,7 +85,7 @@
         "id": "chats-and-chat",
         "title": "Chats + Conversation",
         "description": "Your chats beside the one you are in: pick one in Chats and it opens in Chat.",
-        "layout": { "split": "across", "children": [{ "panel": "chats" }, { "panel": "chat" }], "shares": [1, 2.4] }
+        "layout": { "split": "across", "children": [{ "stack": ["chats"] }, { "stack": ["chat"], "active": true }], "shares": [1, 2.4] }
       }
     ],
     "optionSources": [{ "id": "chats", "title": "Chats" }],
