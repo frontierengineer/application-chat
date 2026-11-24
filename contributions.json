@@ -19,7 +19,7 @@
         "title": "Chat",
         "description": "One chat with an agent: its conversation, as it runs, and the composer. Opens the chat chosen in Chats.",
         "icon": [{ "d": "M5 5h14a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H9l-4 3.5V6a1 1 0 0 1 1-1z", "kind": "outline" }],
-        "minWidth": 420,
+        "minWidth": 320,
         "minHeight": 360,
         "inputs": ["keyboard"],
         "fields": [

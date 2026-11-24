@@ -114,10 +114,15 @@ Object.assign(window, {
   deck,
   // A person or another Application setting the Chat panel's fields in the Deck.
   setPanelValues: (values: Values) => { const target = deck.instances.find((instance) => instance.panelId !== 'chats'); if (target) give(target, values); },
-  // A deck holding the Chats panel beside a Chat panel on one Surface, each its own view; or the compact panel alone.
-  mountView: async (layout: 'deck' | 'compact', values: Record<string, unknown> = {}) => {
+  // A deck holding the Chats panel beside a Chat panel on one Surface, each its own view; the compact panel alone;
+  // or the Chat panel alone on a touch Surface, as a phone shows one panel of a Deck at a time.
+  mountView: async (layout: 'deck' | 'compact' | 'phone', values: Record<string, unknown> = {}) => {
     if (layout === 'compact') {
       await surface.panels['chat-compact'].mount(surfaceContext('touch', 'chat-compact', values) as never);
+      return;
+    }
+    if (layout === 'phone') {
+      await surface.panels.chat.mount(surfaceContext('touch', 'chat', values) as never);
       return;
     }
     const style = document.createElement('style');

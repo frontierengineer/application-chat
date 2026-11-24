@@ -1,6 +1,6 @@
 import { after, before, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -70,7 +70,7 @@ after(async () => {
   await browser?.close();
 });
 
-async function open(layout: 'deck' | 'compact', size = { width: 1180, height: 760 }, setup = ''): Promise<Page> {
+async function open(layout: 'deck' | 'compact' | 'phone', size = { width: 1180, height: 760 }, setup = ''): Promise<Page> {
   const page = await browser!.newPage({ viewport: size, colorScheme: 'light' });
   await page.setContent('<!doctype html><html data-mode="light"><head><meta charset="utf-8"></head><body></body></html>');
   await page.addScriptTag({ content: designSystem, type: 'module' });
@@ -338,6 +338,37 @@ test('a chat keeps a reading column or fills the width, as the Surface last chos
   await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('menuitem', { name: 'Reading width' }).click();
   await eventually(async () => (await widths()).transcript <= 860, 'the reading column again');
+  await page.close();
+});
+
+test('the Chat panel works at its least width, a phone\'s: a chat starts, its composer fits the width, and the next prompt is sent from it', {}, async () => {
+  const contributed = JSON.parse(readFileSync(join(root, 'contributions.json'), 'utf8')) as { surface: { panels: { id: string; minWidth: number; minHeight: number }[] } };
+  const declared = contributed.surface.panels.find((panel) => panel.id === 'chat')!;
+  assert.ok(declared.minWidth <= 320, `the Chat panel fits a phone, ${declared.minWidth} px is wider than the narrowest`);
+  const page = await open('phone', { width: declared.minWidth, height: declared.minHeight });
+  const overflowing = () => page.evaluate(() => {
+    const width = document.documentElement.clientWidth;
+    const out = [...document.querySelectorAll('button, select, textarea, input, frontier-badge, h2')]
+      .filter((element) => (element as HTMLElement).offsetParent !== null)
+      .map((element) => ({ element, box: element.getBoundingClientRect() }))
+      .filter(({ box }) => box.width > 0 && (box.left < -0.5 || box.right > width + 0.5))
+      .map(({ element, box }) => `${element.tagName.toLowerCase()} ${element.getAttribute('aria-label') ?? element.textContent?.trim().slice(0, 30)} at ${Math.round(box.left)}..${Math.round(box.right)}`);
+    return { width, scrolled: document.documentElement.scrollWidth > width + 0.5, out };
+  });
+  await page.getByRole('heading', { name: 'New chat' }).waitFor();
+  assert.deepEqual(await overflowing(), { width: declared.minWidth, scrolled: false, out: [] }, 'the new chat form fits the width');
+  await shot(page, 'phone-new-chat');
+  await page.getByLabel('Prompt', { exact: true }).fill('Fix the flaky login test');
+  await page.getByRole('button', { name: 'Start chat' }).click();
+  await page.locator('[data-part="user"]', { hasText: 'Fix the flaky login test' }).waitFor();
+  await page.evaluate("window.stream('The login test raced the redirect.')");
+  await page.evaluate('window.finish()');
+  await page.getByText('raced the redirect', { exact: false }).waitFor();
+  assert.deepEqual(await overflowing(), { width: declared.minWidth, scrolled: false, out: [] }, 'the chat and its composer fit the width');
+  await shot(page, 'phone-chat');
+  await page.getByRole('textbox', { name: 'Prompt' }).fill('Run it again');
+  await page.getByRole('button', { name: 'Send' }).click();
+  await page.locator('[data-part="user"]', { hasText: 'Run it again' }).waitFor();
   await page.close();
 });
 

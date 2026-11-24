@@ -9,9 +9,9 @@ Applications, written against Frontier's Application Interface
 Chat contributes three **panels** a person places in a deck. **Chats** lists
 the chats and the other public sessions, to find one by its words and start a
 new one; it fits 240 by 320. **Chat** shows one chat, its conversation and
-composer; it needs a keyboard and at least 420 by 360 pixels. A chat chosen in
-Chats is shown in the Chat panel of the same deck, the one already on it if
-there is one, else one is placed there. A Chat panel keeps its values true to
+composer; it needs a keyboard and at least 320 by 360 pixels, so a phone
+shows it. A chat chosen in Chats is shown in the Chat panel of the same deck,
+the one already on it if there is one, else one is placed there. A Chat panel keeps its values true to
 what it shows, the chat or a session no chat runs, so the deck keeps it and
 Chats marks it, deck by deck. **Compact chat** shows the list or one chat, with
 targets sized for a finger; it fits 320 by 400 and works by touch. A Chat
